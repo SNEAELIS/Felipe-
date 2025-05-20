@@ -5,11 +5,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import (TimeoutException, NoSuchElementException,
                                         ElementClickInterceptedException, WebDriverException,
-                                        StaleElementReferenceException)
+                                        StaleElementReferenceException, ElementNotInteractableException)
 from selenium.webdriver.chrome.service import Service
 import pandas as pd
 import time
-
 # Função para conectar ao navegador já aberto
 def conectar_navegador_existente():
     """
@@ -390,16 +389,98 @@ def extract_all_rows_text(driver, table_xpath, timeout=10, count: int=0):
                 row_data.append(text)
 
         joined_row = " | ".join(row_data)
-        print(f"✅ Extracted joined data from table:\n{joined_row}")
-
 
         return joined_row
 
     except TimeoutException:
-        print(f"❌ Timeout: No rows appeared within {timeout} seconds")
+        print(f"⌛ Timeout: No rows appeared within {timeout} seconds")
         return None
     except Exception as e:
         print(f"❌ Extraction failed: {str(e)[:100]}...")
+        return None
+
+# Extrai os dados da Lista de Documentos Hábeis
+def extrat_all_cells_text(driver, table_xpath, col_idx, timeout=10):
+    """
+    Extracts all text content from a specific column in a ngx-datatable across all pages.
+
+    Args:
+        driver: Selenium WebDriver instance
+        table_xpath: XPath of the datatable
+        col_idx: Index of the column to extract (0-based)
+        timeout: Maximum wait time in seconds
+
+    Returns:
+        str: All column data joined with " | " or None if failed
+    """
+    col_data = []
+    processed_pages = set()
+    current_page = 1
+
+    try:
+        while True:
+            # Wait for table to be present
+            table = WebDriverWait(driver, timeout).until(
+                EC.presence_of_element_located((By.XPATH, table_xpath))
+            )
+
+            # Get all rows in current page
+            rows = table.find_elements(By.CSS_SELECTOR, 'datatable-body-row')
+            if not rows:
+                print("⚠️ No rows found in table")
+                break
+            # Get current page information (e.g., current page number text or unique identifier)
+            try:
+                pagination_info = driver.find_element(By.XPATH,
+                                                  '/html/body/transferencia-especial-root/br-main-layout/div/div'
+                                                  '/div/main/transferencia-especial-main/transferencia-plano-acao'
+                                                  '/transferencia-cadastro/br-tab-set/div/nav'
+                                                  '/transferencia-plano-acao-dados-orcamentarios/br-table[2]/div'
+                                                  '/ngx-datatable/div/datatable-footer/div/br-pagination-table'
+                                                  '/div/br-select[2]')
+                pagination_info = pagination_info.text.strip()
+            except NoSuchElementException:
+                pagination_info = str(current_page)
+
+            if f"{current_page}" in processed_pages:
+                print(f"⚠️ Already processed page {current_page}, breaking loop")
+                break
+
+            processed_pages.add(current_page)
+
+            for row in rows:
+                cells = row.find_elements(By.CSS_SELECTOR, 'datatable-body-cell')
+                if len(cells) > col_idx:
+                    cell = cells[col_idx]
+                    label = cell.find_element(By.CSS_SELECTOR, 'div.datatable-body-cell-label')
+                    # Try to find span or button with text
+                    text_elements = label.find_elements(By.XPATH, './/*[text()]')
+                    if text_elements:
+                        text = text_elements[0].text.strip()
+                    else:
+                        text = label.text.strip()
+                    if text:  # Only add non-empty text
+                        col_data.append(text)
+            try:
+                next_button = driver.find_element(By.XPATH,
+                               '//button[contains(@class, "br-button") and contains(@class, "next")]')
+                if not next_button.is_enabled():
+                    print("ℹ️ No more pages to process")
+                    break
+                next_button.click()
+                current_page += 1
+                # Wait for page to load
+                WebDriverWait(driver, timeout).until(
+                    EC.staleness_of(rows[0])  # Wait until old rows are gone
+                )
+            except (NoSuchElementException, ElementNotInteractableException):
+                print("ℹ️ No next page button found or not clickable")
+                break
+
+        return " | ".join(col_data) if col_data else None
+
+    except Exception as e:
+        print(f"❌ Error extracting table data: {str(e)}")
         return None
 
 
@@ -472,7 +553,7 @@ def loop_primeira_pagina(driver, plano_acao: dict):
     plano_acao["emenda"]["valor"] = obter_valor_campo_desabilitado(driver, lista_caminhos[7])
     plano_acao["finalidade"] = extract_all_rows_text(driver=driver, table_xpath=lista_caminhos[8])
 
-    plano_acao["programacoes_orcamentarias"] = obter_valor_campo_desabilitado(driver, lista_caminhos[9])
+    plano_acao["programacoes_orcamentarias"] = extract_all_rows_text(driver, lista_caminhos[9])
 
     return plano_acao
 
@@ -490,24 +571,16 @@ def loop_segunda_pagina(driver,index, plano_acao: dict, df, df_path):
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/'
         'transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/ul/li[2]/button/span',
 
-        # [1]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/'
-        'transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/'
-        'transferencia-plano-acao-dados-orcamentarios/br-table[2]/div/ngx-datatable/div/datatable-body/'
-        'datatable-selection/datatable-scroller/datatable-row-wrapper/datatable-body-row/div[2]/'
-        'datatable-body-cell[1]/div/span',
+        # [1] > [3]
+        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
+        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
+        '-orcamentarios/br-table[2]/div/ngx-datatable',
 
         # [2]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
-        '-orcamentarios/br-table[2]/div/ngx-datatable/div/datatable-body/datatable-selection/'
-        'datatable-scroller/datatable-row-wrapper/datatable-body-row/div[2]/datatable-body-cell[4]/div/span',
+        '',
 
         # [3]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
-        '-orcamentarios/br-table[2]/div/ngx-datatable/div/datatable-body/datatable-selection/datatable-'
-        'scroller/datatable-row-wrapper/datatable-body-row/div[2]/datatable-body-cell[6]/div/button',
+        '',
 
         # [4]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/'
@@ -559,9 +632,9 @@ def loop_segunda_pagina(driver,index, plano_acao: dict, df, df_path):
         clicar_elemento(driver, lista_caminhos[0])
         time.sleep(0.5)
         # Empenho section
-        plano_acao["pagamentos"]["empenho"] = obter_valor_campo_desabilitado(driver, lista_caminhos[1])
-        plano_acao["pagamentos"]["valor"] = obter_valor_campo_desabilitado(driver, lista_caminhos[2])
-        plano_acao["pagamentos"]["ordem"] = obter_valor_campo_desabilitado(driver, lista_caminhos[3])
+        plano_acao["pagamentos"]["empenho"] = extrat_all_cells_text(driver, lista_caminhos[1], 0)
+        plano_acao["pagamentos"]["valor"] = extrat_all_cells_text(driver, lista_caminhos[1], 3)
+        plano_acao["pagamentos"]["ordem"] = extrat_all_cells_text(driver, lista_caminhos[1], 5)
         # Aba Plano de Trabalho
         clicar_elemento(driver, lista_caminhos[4])
 
@@ -580,7 +653,7 @@ def loop_segunda_pagina(driver,index, plano_acao: dict, df, df_path):
 
         # Prazo de Execução em meses
         plano_acao["prazo_de_execucao"] = obter_valor_campo_desabilitado(driver, lista_caminhos[12])
-        print(plano_acao["prazo_de_execucao"], '\n', plano_acao["classificacao_orcamentaria"])
+
         # Execução and Metas section
         coletar_dados_listas(driver, lista_caminhos[7], index=index, df=df, df_path=df_path)
 
@@ -610,11 +683,27 @@ def coletar_dados_hist(driver, tabela_xpath, index, df_path):
                 str(df.at[row_idx, col]).strip() in ('', 'None', 'nan')
                 for col in colunas_para_salvar
             )
-        except KeyError as e:
-            print(f"⚠️ Missing column {e}")
+        except KeyError as err:
+            print(f"⚠️ Missing column {err}")
             return True
 
-    print("\n" + "=" * 50)
+    def is_first_cell_empty(row_idx: int, col_id: int=0) -> bool:
+        """
+        Checks whether the cell at the given row and column index is empty or NaN.
+
+        Parameters:
+            df (pd.DataFrame): The DataFrame to check.
+            row_idx (int): Index of the row.
+            col_idx (int): Index of the column (e.g., 0 for the first column).
+
+        Returns:
+            bool: True if the cell is empty or NaN, or if the row is out of bounds.
+        """
+        if row_idx >= len(df) or col_id >= len(df.columns):
+            return True
+        cell = df.iat[row_idx, col_id]
+        return pd.isna(cell) or cell == ""
+
     print(f"🚀 Starting coletar_dados_hist() for index {index}")
 
     # Read data frame
@@ -683,23 +772,27 @@ def coletar_dados_hist(driver, tabela_xpath, index, df_path):
                 print(f"💾 Saved Sistema data to row {empty_row}")
 
             # 4. Save Concluído data
-            conc_start = index
-            nova_linha_data = {col: }
+            conc_start = index + 1
+            current_cell = is_first_cell_empty(conc_start, 24)
+            first_cell = is_first_cell_empty(conc_start)
+
+            nova_linha_data = {col:conc_data[q] for q, col in enumerate(colunas_para_salvar) }
+
             try:
-                # Check if current row's columns are empty
-                current_row_empty = True
-                if conc_start < len(df):
-                    current_row_empty = all(
-                        pd.isna(df.at[conc_start, col])
-                        or
-                        df.at[conc_start, col] == "" for col in colunas_para_salvar
-                    )
-                if current_row_empty and conc_start < len(df):
-                    # Fill existing empty row
+                if current_cell and first_cell:
+                    # Insert data in current row
                     for col_idx, col in enumerate(colunas_para_salvar):
                         df.at[conc_start, col] = conc_data[col_idx]
-
                     print(f"ℹ️ Dados inseridos na linha existente {conc_start}")
+
+                elif not first_cell:
+                    # Current cell has data, insert new row
+                    new_row = {col: nova_linha_data.get(col, '') for col in df.columns}
+                    new_row_df = pd.DataFrame([new_row])
+                    df = pd.concat([df.iloc[:conc_start], new_row_df, df.iloc[conc_start:]],
+                                   ignore_index=True)
+
+                    print(f"ℹ️ Nova linha criada na posição {conc_start}")
                 else:
                     conc_start += 1
 
@@ -731,7 +824,6 @@ def coletar_dados_hist(driver, tabela_xpath, index, df_path):
 
 # Função para coletar executores e metas
 def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
-    print("\n" + "=" * 50)
     print(f"🚀 Starting coletar_dados_listas() for index {index}")
     # Extracts all metas from the currently expanded executor row
     def extract_metas_from_expanded_row():
@@ -1068,23 +1160,26 @@ def atualiza_excel(df_path, df, index, plano_acao: dict,  col_range: list=None,
 
     df.to_excel(df_path, index=False)
 
-
+# Verify is the row has data in it
+def has_actual_data(x):
+    """Returns True if value is non-empty and non-NA"""
+    if pd.isna(x):
+        return False
+    if isinstance(x, str):
+        return x.strip() != ""
+    return True  # Numbers, booleans, etc.
 
 # Função principal
 def main():
     driver = conectar_navegador_existente()
 
-    planilha_final = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e "
-                        r"Assistência Social\Teste001\PT SNEAELIS até dia 14_04_2025(SOFIA) - Copia.xlsx")
+    planilha_final = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
+                      r"Social\Teste001\Sofia\Emissão Parecer 2024 (732 PT) - Copia.xlsx")
 
 
     try:
         df = pd.read_excel(planilha_final, engine='openpyxl').astype(object)
         print(f"✅ Planilha lida com {len(df)} linhas.")
-
-        if df["Código do Plano de Ação"].duplicated().any():
-            print("⚠️ Aviso: Há códigos duplicados na planilha. Removendo duplicatas...")
-            df = df.drop_duplicates(subset=["Código do Plano de Ação"], keep="first")
 
         # Clica no que menu de navegação
         clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/br-header/"
@@ -1100,7 +1195,12 @@ def main():
                                 "main/transferencia-especial-main/transferencia-plano-acao/transferencia-plano-acao-consulta/br-table/div/div/div/button/i")
 
         # Processa cada linha do DataFrame usando o índice
-        for index, row in df.iterrows():
+        index = 0
+        #for index, row in df.iterrows():
+        while index < len(df):
+            print(len(df))
+
+            row = df.iloc[index]
             plano_acao = {
                 "beneficiario": {
                     "nome": "",  # Nome do beneficiário
@@ -1150,16 +1250,20 @@ def main():
                 "prazo_de_execucao": "",
                 "classificacao_orcamentaria": ""
             }
-
             codigo = str(row["Código do Plano de Ação"])  # Garante que o código seja string
+
             # Verifica se o código já foi processado (coluna "Responsável" preenchida e diferente de erro)
-            if pd.notna(df.at[index, "Dados dos Conselhos locais ou instâncias de controle social"]):
-                print(f"ℹ️ Linha {index} já tem situação de conclusão: {df.at[index,
-                'Dados dos Conselhos locais ou instâncias de controle social']}")
-                continue
-            if pd.isna(df.at[index,"Código do Plano de Ação"]):
+            row_without_first_col = row.iloc[1:] # Excludes index 0 (first column)
+            if row_without_first_col.apply(has_actual_data).any():
+                print(f"⏭️ Pulando linha... {index} ")
+                index += 1
                 continue
 
+            if pd.isna(df.at[index,"Código do Plano de Ação"]):
+                index += 1
+                continue
+
+            print(f"\n{' Inicio do loop ':=^60}\n")
             print(f"Processando código: {codigo} (índice: {index})")
 
             try:
@@ -1231,7 +1335,6 @@ def main():
                 
                 remover_backdrop(driver)
 
-                '''
                 # Coleta os dados da primeira pagina
                 plano_acao = loop_primeira_pagina(driver=driver, plano_acao=plano_acao)
                 domain = list(range(1,11))
@@ -1245,9 +1348,8 @@ def main():
                     fin_range=10  # Last key to use (exclusive)
                 )
 
-                print(f"\n{' Fim do loop da primeira página ':=^60}\n")
+                print(f"\n{' Inicio do loop da segunda página ':=^60}\n")
 
-                '''
                 # Coleta os dados da segunda pagina
                 plano_acao = loop_segunda_pagina(driver=driver, plano_acao=plano_acao, index=index, df=df,
                                                  df_path=planilha_final)
@@ -1258,6 +1360,8 @@ def main():
                     plano_acao=plano_acao,  # Dictionary containing data
                     second_init=True
                 )
+
+                print(f"\n{' Fim do loop ':=^60}\n")
 
                 df = pd.read_excel(planilha_final, engine='openpyxl').astype(object)
 
@@ -1273,6 +1377,7 @@ def main():
                                 "/transferencia-especial-main/transferencia-plano-acao/transferencia-plano"
                                 "-acao-consulta/br-table/div/div/div/button/i")
 
+                index += 1
 
             except Exception as erro:
                 last_error = truncate_error(f"Main loop element intercepted: {str(erro)}")
@@ -1300,7 +1405,7 @@ def main():
         print("✅ Todos os dados foram coletados e salvos na planilha!")
 
     except Exception as erro:
-        last_error = truncate_error(f"Element intercepted: {str(erro)}")
+        last_error = truncate_error(f"Element intercepted: {str(erro)}, {type(erro).__name__}")
         print(f"❌ {last_error}")
 
 if __name__ == "__main__":
