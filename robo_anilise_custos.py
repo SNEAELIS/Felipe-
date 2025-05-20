@@ -18,6 +18,8 @@ import sys
 import shutil
 import json
 import traceback
+import hashlib
+
 
 class Robo:
     def __init__(self):
@@ -94,8 +96,50 @@ class Robo:
             print(Fore.RED + f'🔴📄 Instrumento indisponível. \nErro: {e}')
             sys.exit(1)
 
+    def campo_pesquisa(self, numero_processo):
+        try:
+            # Seleciona campo de consulta/pesquisa, insere o número de proposta/instrumento e da ENTER
+            campo_pesquisa = self.webdriver_element_wait('/html/body/div[3]/div[14]/div[3]/'
+                                                         'div/div/form/table/tbody/tr[1]/td[2]/input')
+            campo_pesquisa.clear()
+            campo_pesquisa.send_keys(numero_processo)
+            campo_pesquisa.send_keys(Keys.ENTER)
+
+            # Acessa o item proposta/instrumento
+            acessa_item = self.webdriver_element_wait('/html/body/div[3]/div[14]/div[3]/'
+                                                      'div[3]/table/tbody/tr/td[1]/div/a')
+            acessa_item.click()
+        except Exception as e:
+            print(f' Falha ao inserir número de processo no campo de pesquisa. Erro: {type(e).__name__}')
+
+    def busca_convenio(self):
+        print('\n🔁🔍 Executando loop de pesquisa de convênio')
+        # Seleciona aba primária, após acessar processo/instrumento. Aba Projeto Básico/Termo de referência
+        termo_referencia = self.webdriver_element_wait('/html[1]/body[1]/div[3]/div[14]/'
+                                                       'div[1]/div[1]/div[1]/a[4]/div[1]/span[1]/span[1]')
+        termo_referencia.click()
+
+        # Aba Projeto Básico/Termo de referência
+        aba_termo_referencia = self.webdriver_element_wait('/html[1]/body[1]/div[3]/div[14]/div[1]'
+                                                           '/div[1]/div[2]/a[9]/div[1]/span[1]/span[1]')
+        aba_termo_referencia.click()
+
+    def busca_propostas(self):
+        # Executa o loop de pesquisa de anexos
+        print('🔁📎 Executando loop de pesquisa de anexos')
+
+        # Aba Plano de trabalho
+        self.webdriver_element_wait("//span[contains(text(),'Plano de Trabalho')]").click()
+        # Seleciona aba anexos
+        self.webdriver_element_wait("//span[contains(text(),'Anexos')]").click()
+
+        # acessa lista proposta
+        self.lista_proposta()
+
     # Pesquisa o termo de fomento listado na planilha e executa download e transferência caso exista algúm.
-    def loop_de_pesquisa(self, numero_processo: str, caminho_pasta: str, pasta_download: str, feriado: int, err: list=None):
+    def loop_de_pesquisa(self, numero_processo: str, caminho_pasta: str, pasta_download: str,
+                         tipo_instrumento, feriado: int, err: list=None, pula_convenio: bool=True,
+                         pg: int=0, res_err: bool=False, anexos: bool=True):
         """
             Executa as etapas de pesquisa para um número de processo específico.
 
@@ -153,16 +197,23 @@ class Robo:
                 # Encontra a tabela de anexos
                 time.sleep(0.5)
                 tabela = self.driver.find_element(By.ID, 'listaAnexos')
-
                 # Encontra todas as linhas da tabela
-                linhas = tabela.find_elements(By.TAG_NAME, 'tr')
-
+                linhas = tabela.find_elements(By.XPATH, './/tbody/tr')
                 # Diz quantas páginas tem
                 paginas = self.conta_paginas(tabela)
 
                 try:
                     for pagina in range(1, paginas + 1):
                         int(pagina)
+                        if pg > pagina:
+                            continue
+
+                        print(f'📤📄 Extraindo dados da pagina {pagina}')
+
+                        # Ensure the error log has a list for the current page
+                        while len(err) < pagina:
+                            err.append([])
+
                         if pagina > 1:
                             self.driver.find_element(By.LINK_TEXT, f'{pagina}').click()
                             # Encontra a tabela na página atual
@@ -172,8 +223,13 @@ class Robo:
                             linhas = tabela.find_elements(By.TAG_NAME, 'tr')
 
                         for indice, linha in enumerate(linhas):
-                            if indice in err or indice == 0:
+                            if indice in err[pagina-1]:
+                                print(
+                                    f"🔄 Pulando linha {indice}. Motivo: erro registrado")
                                 continue
+                            if err[pagina - 1]:
+                                if indice < err[pagina - 1][-1]:
+                                    continue
                             try:
                                 # Pega o valor da data em formato string
                                 elemento_data_site = linha.find_element(By.CLASS_NAME, 'dataUpload')
@@ -186,17 +242,27 @@ class Robo:
                                         if botao_download:
                                             botao_download.click()
                                 except Exception as e:
-                                    print(f'❌ Botã de download não encontrado. erro: {type(e).__name__}')
+                                    print(f'❌ Botã de download não encontrado. erro: {type(e).__name__}.')
                             except StaleElementReferenceException:
                                 try:
                                     linha_erro = indice - 1
-                                    print(f"StaleElementReferenceException occurred at line: {linha_erro}")
-                                    if linha_erro not in err:
-                                        err.append(linha_erro)
+                                    print(f"⚠️ StaleElementReferenceException occurred at line: {linha_erro}")
+                                    if linha_erro >= 0 and linha_erro not in err[pagina - 1]:
+                                        err[pagina-1].append(linha_erro)
+                                        print(err[pagina - 1])
                                     self.driver.back()
                                     self.consulta_instrumento()
-                                    self.loop_de_pesquisa(numero_processo, caminho_pasta, pasta_download,
-                                                      feriado, err)
+                                    self.loop_de_pesquisa(numero_processo=numero_processo,
+                                                          caminho_pasta=caminho_pasta,
+                                                          pasta_download=pasta_download,
+                                                          feriado=feriado,
+                                                          tipo_instrumento=tipo_instrumento,
+                                                          err=err,
+                                                          pula_convenio=False,
+                                                          pg=pagina,
+                                                          res_err=True,
+                                                          anexos=anexos
+                                                          )
                                 except Exception as error:
                                     error_trace = traceback.format_exc()
                                     print(f'❌ Erro ao pular linha com falha. Erro:'
@@ -206,75 +272,256 @@ class Robo:
                                 continue
                 except Exception as error:
                     print(f"❌ Erro ao buscar nova página: {error}. Err: {type(error).__name__}")
+
+            except Exception as error:
+                print(f'❌ Erro de download: Termo {error}. Err: {type(error).__name__}')
+
+        def baixa_pdf_exec():
+            """
+                    Baixa os arquivos PDF presentes em uma tabela HTML.
+
+                    Esta função localiza uma tabela HTML com o ID 'listaAnexos', itera sobre suas linhas,
+                    extrai o nome do arquivo e a data de upload, e clica no botão de download para cada arquivo.
+                    Em seguida, transfere o arquivo baixado para a pasta especificada.
+
+                    Returns:
+                        None
+                    """
+            try:
+                # Encontra a tabela de anexos
+                time.sleep(0.5)
+                tabela = self.driver.find_element(By.ID, 'listaAnexos')
+
+                # Encontra todas as linhas da tabela
+                linhas = tabela.find_elements(By.XPATH, './/tbody/tr')
+
+                # Diz quantas páginas tem
+                paginas = self.conta_paginas(tabela)
+
+                try:
+                    for pagina in range(1, paginas + 1):
+                        int(pagina)
+                        if pg > pagina:
+                            continue
+
+                        print(f'📤📄 Extraindo dados da pagina {pagina}')
+
+                        # Ensure the error log has a list for the current page
+                        while len(err) < pagina:
+                            err.append([])
+
+                        if pagina > 1:
+                            self.driver.find_element(By.LINK_TEXT, f'{pagina}').click()
+                            # Encontra a tabela na página atual
+                            tabela = self.driver.find_element(By.ID, 'listaAnexos')
+
+                            # Encontra todas as linhas da tabela atual
+                            linhas = tabela.find_elements(By.TAG_NAME, 'tr')
+
+                        for indice, linha in enumerate(linhas):
+                            if indice in err[pagina-1]:
+                                print(
+                                    f"🔄 Pulando linha {indice}. Motivo: erro registrado")
+                                continue
+                            if err[pagina-1]:
+                                if indice < err[pagina - 1][-1]:
+                                    continue
+                            try:
+                                # Pega o valor da data em formato string
+                                elemento_data_site = linha.find_element(By.CLASS_NAME, 'dataUpload')
+                                data_site = elemento_data_site.text if elemento_data_site else None
+                                try:
+                                    # Compara a data do site com a última data registada na planilha
+                                    if self.compara_data(data_site, feriado):
+                                        # Pega o elemento do botão de download e deixa selecionado
+                                        botao_download = linha.find_element(By.CLASS_NAME, 'buttonLink')
+                                        if botao_download:
+                                            botao_download.click()
+                                except Exception as e:
+                                    print(f'❌ Botã de download não encontrado. erro: {type(e).__name__}.')
+                            except StaleElementReferenceException:
+                                try:
+                                    linha_erro = indice - 1
+                                    print(f"⚠️ StaleElementReferenceException occurred at line: {linha_erro}")
+                                    if linha_erro >= 0 and linha_erro not in err[pagina - 1]:
+                                        err[pagina-1].append(linha_erro)
+                                        print(err[pagina - 1])
+                                    self.driver.back()
+                                    self.consulta_instrumento()
+                                    self.loop_de_pesquisa(numero_processo=numero_processo,
+                                                          caminho_pasta=caminho_pasta,
+                                                          pasta_download=pasta_download,
+                                                          feriado=feriado,
+                                                          tipo_instrumento=tipo_instrumento,
+                                                          err=err,
+                                                          pula_convenio=False,
+                                                          pg=pagina,
+                                                          res_err=False,
+                                                          anexos=anexos
+                                                          )
+                                except Exception as error:
+                                    error_trace = traceback.format_exc()
+                                    print(f'❌ Erro ao pular linha com falha. Erro:'
+                                          f' {type(error).__name__}\nTraceback:\n{error_trace}')
+                            except Exception as error:
+                                print(f"❌ Erro ao processar a linha nº{indice} de termo, erro: {type(error).__name__}")
+                                continue
+                except Exception as error:
+                    print(f"❌ Erro ao buscar nova página: {error}. Err: {type(error).__name__}")
+
+            except Exception as error:
+                print(f'❌ Erro de download: Termo {error}. Err: {type(error).__name__}')
+
+        def baixa_pdf_convenio():
+            """
+                          Baixa os arquivos PDF presentes em uma tabela HTML.
+
+                          Esta função localiza uma tabela HTML com o ID 'listaAnexos', itera sobre suas linhas,
+                          extrai o nome do arquivo e a data de upload, e clica no botão de download para cada arquivo.
+                          Em seguida, transfere o arquivo baixado para a pasta especificada.
+
+                          Returns:
+                              None
+                          """
+            try:
+                # Encontra a tabela de anexos
+                time.sleep(0.3)
+                tabela = self.driver.find_element(By.ID, 'documentos')
+                # Encontra todas as linhas da tabela
+                linhas = tabela.find_elements(By.TAG_NAME, 'tr')
+                # Diz quantas páginas tem
+                paginas = self.conta_paginas(tabela)
+
+                try:
+                    for pagina in range(1, paginas + 1):
+                        int(pagina)
+                        if pg > pagina:
+                            continue
+
+                        print(f'📤📄 Extraindo dados da pagina {pagina}')
+
+                        # Ensure the error log has a list for the current page
+                        while len(err) < pagina:
+                            err.append([])
+
+                        if pagina > 1:
+                            self.driver.find_element(By.LINK_TEXT, f'{pagina}').click()
+                            time.sleep(0.3)
+
+                            # Encontra a tabela do convênio na página atual
+                            tabela = self.driver.find_element(By.ID, 'documentos')
+
+                            # Encontra todas as linhas da tabela atual
+                            linhas = tabela.find_elements(By.TAG_NAME, 'tr')
+
+                        for indice, linha in enumerate(linhas):
+                            if indice in err[pagina-1] or indice == 0:
+                                continue
+                            try:
+                                # Pega o valor da data em formato string
+                                elemento_data_site = linha.find_element(By.XPATH, f'//*[@id="tbodyrow"]'
+                                                                                  f'/tr[{indice}]/td[4]/div')
+                                data_site = elemento_data_site.text if elemento_data_site else None
+                                try:
+                                    # Compara a data do site com a última data registada na planilha
+                                    if self.compara_data(data_site, feriado):
+                                        # Pega o elemento do botão de download e deixa selecionado
+                                        botao_download = linha.find_element(By.XPATH,
+                                                                            f'//*[@id="tbodyrow"]/tr[{indice}]'
+                                                                            f'/td[7]/nobr/a')
+                                        if botao_download:
+                                            botao_download.click()
+                                except Exception as e:
+                                    print(f'❌ Botã de download não encontrado.{e}')
+                            except StaleElementReferenceException:
+                                try:
+                                    linha_erro = indice - 1
+                                    print(f"⚠️ StaleElementReferenceException occurred at line: {linha_erro}")
+                                    if linha_erro not in err[pagina-1]:
+                                        err[pagina-1].append(linha_erro)
+                                    self.driver.back()
+                                    self.consulta_instrumento()
+                                    self.loop_de_pesquisa(numero_processo=numero_processo,
+                                                          caminho_pasta=caminho_pasta,
+                                                          pasta_download=pasta_download,
+                                                          feriado=feriado,
+                                                          tipo_instrumento=tipo_instrumento,
+                                                          err=err,
+                                                          pula_convenio=False,
+                                                          pg=pagina
+                                                          )
+                                except Exception as error:
+                                    error_trace = traceback.format_exc()
+                                    print(f'❌ Erro ao pular linha com falha. Erro:'
+                                          f' {type(error).__name__}\nTraceback:\n{error_trace}')
+                            except Exception as error:
+                                print(
+                                    f"❌ Erro ao processar a linha nº{indice} de termo, erro: {type(error).__name__}")
+                                continue
+                except Exception as error:
+                    print(f"❌ Erro ao buscar nova página: {error}. Err: {type(error).__name__}")
             except Exception as error:
                 print(f'❌ Erro de download: Termo {error}. Err: {type(error).__name__}')
 
         if not err:
-            err = []
+            err = [[]]
         try:
-            # Seleciona campo de consulta/pesquisa, insere o número de proposta/instrumento e da ENTER
-            campo_pesquisa = self.webdriver_element_wait('/html/body/div[3]/div[14]/div[3]/'
-                                                         'div/div/form/table/tbody/tr[1]/td[2]/input')
-            campo_pesquisa.clear()
-            campo_pesquisa.send_keys(numero_processo)
-            campo_pesquisa.send_keys(Keys.ENTER)
+            if tipo_instrumento.strip() == 'Convênio' and pula_convenio:
+                self.busca_convenio()
+                # Baixa todos os arquivos presentes no documento
+                baixa_pdf_convenio()
+                # espera os downloads terminarem
+                self.espera_completar_download(pasta_download=pasta_download)
+                # Transfere os arquivos baixados para a pasta com nome do processo referente
+                self.transfere_arquivos(caminho_pasta=caminho_pasta, pasta_download=pasta_download)
 
-            # Acessa o item proposta/instrumento
-            self.webdriver_element_wait('/html/body/div[3]/div[14]/div[3]/'
-                                        'div[3]/table/tbody/tr/td[1]/div/a').click()
+            if anexos:
+                self.busca_propostas()
+                # Verifica se a tabela existe na página anexos proposta e baixa os anexos.
+                try:
+                    baixa_pdf()
+                except Exception as e:
+                    print(f"❌ Tabela não encontrada.\nErro: {type(e).__name__}")
 
-            # Seleciona aba primária, após acessar processo/instrumento. Aba Plano de trabalho
-            # (aba terciária no total)
-            self.webdriver_element_wait("//span[contains(text(),'Plano de Trabalho')]").click()
-            # Seleciona aba anexos
-            self.webdriver_element_wait("//span[contains(text(),'Anexos')]").click()
-
-            # acessa lista proposta
-            self.lista_proposta()
-
-            # Verifica se a tabela existe na página anexos proposta e baixa os anexos.
-            try:
-                baixa_pdf()
-
-            except Exception:
-                print(f"❌ Tabela não encontrada.\nErro:")
-
-            # Seleciona botão voltar
-            botao_voltar = self.webdriver_element_wait('/html/body/div[3]/div[14]/div[4]/div/div[1]/'
-                                                       'form/table/tbody/tr[1]/td/input')
-            botao_voltar.click()
+                # Seleciona botão voltar
+                botao_voltar = self.webdriver_element_wait('/html/body/div[3]/div[14]/div[4]/div/div[1]/'
+                                                           'form/table/tbody/tr[1]/td/input')
+                botao_voltar.click()
+                anexos = False
 
             # Seleciona lista de anexos execução e manda baixar os arquivos
             try:
-                botao_lista_execucao = self.webdriver_element_wait('//tbody//tr//input[2]')
+                if res_err:
+                    err = [[]]
+                    pg = 0
+                print('\n🔁📎 Executando loop de pesquisa de anexos execução')
 
+                botao_lista_execucao = self.webdriver_element_wait('//tbody//tr//input[2]')
                 if botao_lista_execucao.is_displayed() or botao_lista_execucao.is_enabled():
                     self.lista_execucao()
-
                     # Verifica se a tabela existe na página anexos execução.
                     try:
-                        baixa_pdf()
-                        # Volta para a aba de consulta (começo do loop)
-                        consulta_proposta = self.webdriver_element_wait("//a[normalize-space()='Consultar Proposta']")
-                        if consulta_proposta:
-                            consulta_proposta.click()
+                        baixa_pdf_exec()
                     except Exception as e:
                         print(f"❌ Tabela não encontrada.\nErro: {e}")
+                else:
+                    # Volta para a aba de consulta (começo do loop) caso não tenha lista de execução
+                    self.webdriver_element_wait('/html[1]/body[1]/div[3]/div[2]/div[6]/a[2]').click()
+                # espera os downloads terminarem
+                self.espera_completar_download(pasta_download=pasta_download)
+                # Transfere os arquivos baixados para a pasta com nome do processo referente
+                self.transfere_arquivos(caminho_pasta, pasta_download)
             except Exception:
                 print(f'❌ Falha em sair da consulta de listas de anexos')
                 self.consulta_instrumento()
-
-            # espera os downloads terminarem
-            self.espera_completar_download(pasta_download=pasta_download)
-            # Transfere os arquivos baixados para a pasta com nome do processo referente
-            self.transfere_arquivos(caminho_pasta, pasta_download)
-
-        except TimeoutException:
+            # Volta para a tela de consultar propostas
+            self.webdriver_element_wait("//a[normalize-space()='Consultar Proposta']").click()
+        except TimeoutException as t:
+            print(f'TIMEOUT {t[:50]}')
             self.consulta_instrumento()
-            print(f'⏳💀 TIMEOUT')
-        except Exception as e:
-            print(f'❌ Falha no loop de pesquisa do processo')
-            sys.exit(1)
+        except Exception:
+            print(f'❌ Falha no loop de pesquisa do convênio.')
+            self.consulta_instrumento()
 
     # Pega o ultimo arquivo baixado da pasta Downloads e move para a pasta destino
     def espera_completar_download(self, pasta_download: str, tempo_limite: int = 30,
@@ -326,7 +573,7 @@ class Robo:
                 if any(f.endswith(ext) for ext in extensoes_temporarias)
             ]
 
-            time.sleep(0.1)
+            time.sleep(1)
 
             if not arquivos_temporarios:
                 return True
@@ -334,6 +581,7 @@ class Robo:
         raise Exception(
             f'Não completou o download no tempo limite.'
             f' Arquivos temporários encontrados: {arquivos_temporarios}')
+
 
     # Conta quantas páginas tem para iterar sobre
     def conta_paginas(self, tabela):
@@ -600,100 +848,7 @@ class Robo:
         # Retorna o caminho completo da pasta, mesmo que a criação tenha falhado (para tratamento posterior)
         return caminho_pasta
 
-    # Função para enviar e-mails com anexos.
-    def enviar_email_tecnico(self, email_destino: str, destinatario: str,
-                             lista_documentos: list or dict, email_copia: any = False, mensagem=False,
-                             numero_updates=0) -> None:
-        """
-                Envia um e-mail técnico para o destinatário especificado.
-
-                Esta função envia um e-mail para o técnico, informando sobre a atualização da proposta
-                e fornecendo o número do processo e o caminho para a pasta onde o documento atualizado
-                está localizado.
-
-                Args:
-                :param    email_destino: O endereço de e-mail do destinatário.
-                :param    destinatario: O nome do destinatário.
-                :param    lista_documentos: O número do processo está na posição 0, o caminho da pasta
-                          está na posição 1 e a posição 2 tem a lista de todos os
-                          documentos que foram atualizados daquele processo.
-                :param    mensagem: Define qual mensagem vai ser enviada, se é para o técnico ou para os chefes.
-
-                Returns:
-                    None
-                """
-
-        # Lista_documentos recebe argumentos da variável docs_atuais
-        link_onedrive = (r'https://mdsgov-my.sharepoint.com/:f:/g/personal/'
-                         r'andrei_rodrigues_esporte_gov_br/Eu5WAkT4dFlItHjvxYADDLEBJ2JfPnGcZTt6xiKGj1AMjw?e=03H12b')
-        # Cria o corpo do e-mail com as informações necessárias para os Chefes
-        if mensagem:
-            mensagem = f"""
-
-            <p>Prezados Sr. Paulo Afonso de Araujo Quermes, Leidiane Rodrigues Pires e Carla Prado Novais</p>
-
-            <p>Gostaria de informar que a proposta houveram {numero_updates} atualizações.</p>
-
-            <p>Segue a lista dos documentos:<br><br> {lista_documentos}. <br><br>Link da pasta <a href="{link_onedrive}">{'Resultados Robô Mérito-Custos'}</a></p>
-
-            <p> Atenciosamente,</p>
-        """
-            try:
-                copia_list = [email_destino, email_copia, destinatario]
-                # Cria integração com o outlook
-                outlook = win32.Dispatch('outlook.application')
-
-                # Configurar e-mail
-                email = outlook.CreateItem(0)
-                email.To = f'{';'.join(copia_list)}'
-                email.Subject = f'Atualização Diária das propostas'
-                email.HTMLBody = mensagem
-
-                email.Send()
-                print(f"📧📤 E-mail enviado para {copia_list}")
-            except Exception as e:
-                print(f"❌ Falha ao enviar e-mail chefes: \n{e}")
-        # Cria o corpo do e-mail com as informações necessárias para cada técnico
-        else:
-            linha_formatada = '<br>'.join(lista_documentos)
-
-            # Cria o corpo do e-mail com as informações necessárias para os técnicos
-            mensagem = f"""
-
-            <p>Prezado(a) {destinatario.capitalize()}</p>
-
-            <p>Gostaria de informar as atualizações diárias para as propostas de seu encargo.</p>
-
-            <p>O documento baixado se encontra na pasta <a href="{link_onedrive}">{'Resultados Robô Mérito-Custos'}</a>.</p>
-
-
-            <p>Segue a lista das propostas:<br> {linha_formatada}.</p>
-
-            <p> Atenciosamente</p>
-
-            <p></p>
-            <p></p>
-            <p></p>
-            <p>ATENÇÂO! ESTAS PROPOSTAS SÃO MONITORADAS NO TRANSFEREGOV.COM</p>
-        """
-
-            try:
-                # Cria integração com o outlook
-                outlook = win32.Dispatch('outlook.application')
-
-                # Configurar e-mail
-                email = outlook.CreateItem(0)
-                email.To = f'{email_destino}'
-                email.Subject = f'Atualização de Propostas'
-                email.HTMLBody = mensagem
-                email.Send()
-                print(f"✅ E-mail enviado para {destinatario}, no endereço {email_destino}")
-
-            except Exception:
-                print(f"❌ Falha ao enviar e-mail para: {destinatario}\n No e-mail: {email_destino}")
-
-    def extrair_dados_excel(self, caminho_arquivo_fonte, busca_id: str, email_id: str,
-                            nome_recipiente_id: str, tipo_instrumento_id: str, email_copia_id: str):
+    def extrair_dados_excel(self, caminho_arquivo_fonte, busca_id: str, tipo_instrumento_id: str):
         """
            Lê os contatos de uma planilha Excel e executa ações baseadas nos dados extraídos.
 
@@ -709,41 +864,17 @@ class Robo:
 
         # Cria um lista para cada coluna do arquivo xlsx
         numero_processo = list()
-        email = list()
-        entidade = list()
         tipo_instrumento = list()
-        email_copia = list()
 
         try:
             # Itera a planilha e armazena os dados em listas
             for indice, linha in dados_processo.iterrows():  # Assume que a primeira linha e um cabeçalho
                 numero_processo.append(linha[busca_id])  # Busca o número do processo
-                email.append(linha[email_id])  # Busca o destinatário da mensagem
-                entidade.append(linha[nome_recipiente_id])  # Busca destinatário do email
                 tipo_instrumento.append(linha[tipo_instrumento_id])  # Busca o tipo de instrumento
-                email_copia.append(linha[email_copia_id])  # Busca o endereço de email para enviar cópia
         except Exception as e:
             print(f"❌ Erro de leitura encontrado, erro: {e}")
 
-        return numero_processo, email, entidade, tipo_instrumento, email_copia
-
-    def login(self, login: str, senha: str):
-        try:
-            # Acessa a tela de login do gov.br
-            pre_login = self.webdriver_element_wait('/html[1]/body[1]/div[2]/div[1]/div[1]/div[3]/main[1]/form[1]/a[1]')
-            pre_login.click()
-            # Entra o cpf od usuário
-            login_gov = self.webdriver_element_wait('/html[1]/body[1]/div[1]/main[1]/form[1]/div[1]/div[2]/input[1]')
-            login_gov.clear()
-            login_gov.send_keys(login)
-            login_gov.send_keys(Keys.ENTER)
-            # Entra a senha do usuário
-            entra_senha = self.webdriver_element_wait('/html[1]/body[1]/div[1]/main[1]/form[1]/div[1]/div[1]/input[1]')
-            entra_senha.clear()
-            entra_senha.send_keys(senha)
-            entra_senha.send_keys(Keys.ENTER)
-        except Exception as e:
-            print(f"❌ Erro de login encontrado, erro: {e}")
+        return numero_processo, tipo_instrumento
 
     # Verifica se a pasta está vazia
     def pasta_vazia(self, pasta_pai: str) -> list:
@@ -887,30 +1018,55 @@ class Robo:
 
 
 def main(feriado=2) -> None:
-    # CASO TENHA QUE ITERAR TODAS AS PASTAS E BAIXAR TODOS OS ARQUIVOS NOVAMENTE
-    # lista_pagina_quebrada = [61, 352, 482,604]
+    def eta():
+        idx = indice + 1
+        elapsed_time = time.time() - start_time
+
+        # Média por iteração
+        avg_time_per_iter = elapsed_time / idx
+
+        # Estimativa de tempo restante
+        remaining_iters = max_linha - idx
+        eta_seconds = remaining_iters * avg_time_per_iter
+
+        # Formata ETA como mm:ss
+        eta_minutes = int(eta_seconds // 60)
+        eta_secs = int(eta_seconds % 60)
+
+        print(
+            f"\n{indice} {'>' * 10} Porcentagem concluída:"
+            f" {(indice / max_linha) * 100:.2f}% | ETA: {eta_minutes:02d}:{eta_secs:02d}")
+
     # Caminho da pasta download que é o diretório padrão para download. Use o caminho da pasta 'Download' do
     # seu computador
     pasta_download = r'C:\Users\felipe.rsouza\Downloads'
 
     # Caminho do arquivo .xlsx que contem os dados necessários para rodar o robô
-    caminho_arquivo_fonte = (r'C:\Users\felipe.rsouza\Documents\Dataframe Custos e Méritos.xlsx')
-
+    caminho_arquivo_fonte = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
+                             r'Assistência Social\Automações '
+                             r'SNEAELIS\analise_custo_leidiane\source\Controle de Processos - Análise de '
+                             r'Custos.xlsx')
     # Rota da pasta onde os arquivos baixados serão alocados, cada processo terá uma subpasta dentro desta
-    caminho_pasta_onedrive = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e'
-                              r' Assistência Social\Automações SNEAELIS\Resultados Robô Mérito-Custos')
-
+    caminho_pasta_onedrive = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
+                              r'Assistência Social\Automações SNEAELIS\analise_custo_leidiane')
     # Caminho do arquivo JSON que serve como catão de memória
-    arquivo_log = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento'
-                   r' e Assistência Social\Automações SNEAELIS\Resultados Robô Mérito-Custos( back_end )\arquivo_log.json')
+    arquivo_log = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                   r'Social\Automações SNEAELIS\analise_custo_leidiane\source\arquivo_log.json')
 
-    # Instancia um objeto da classe Robo
-    robo = Robo()
-    # Extrai dados de colunas específicas do Excel
-    numero_processo, email, entidade, tipo_instrumento, email_copia = robo.extrair_dados_excel(
-        caminho_arquivo_fonte=caminho_arquivo_fonte, busca_id='Num Proposta', email_id='E-mail Técnico Custos',
-        nome_recipiente_id='Responsável  Análise Custos', tipo_instrumento_id='Tipo Instrumento:',
-        email_copia_id='Técnicos Ludmila')
+    try:
+        # Instancia um objeto da classe Robo
+        robo = Robo()
+        # Extrai dados de colunas específicas do Excel
+    except Exception as e:
+        print(f"\n‼️ Erro fatal ao iniciar o robô: {e}")
+        sys.exit("Parando o programa.")
+
+    numero_processo, tipo_instrumento = robo.extrair_dados_excel(
+        caminho_arquivo_fonte=caminho_arquivo_fonte,
+        busca_id='Nº Proposta',
+        tipo_instrumento_id='Instrumento'
+        )
+
     max_linha = len(numero_processo)
 
     # Pós-processamento dos dados para não haver erros na execução do programa
@@ -930,36 +1086,35 @@ def main(feriado=2) -> None:
     inicio_range = 0
     if progresso["indice"] > 0:
         inicio_range = progresso["indice"] + 1
+
     for indice in range(inicio_range, max_linha):
-        print(f"{indice},   >>>  {(indice / max_linha) * 100:.2f}%")
-        # robo.timmer(3)
-        if tipo_instrumento[indice] in ['Termo de Fomento', 'Termo de Colaboração']:
+        eta()
+        try:
             # Cria pasta com número do processo
             caminho_pasta = robo.criar_pasta(nome_pasta=numero_processo[indice],
                                              caminho_pasta_onedrive=caminho_pasta_onedrive,
                                              tipo_instrumento=tipo_instrumento[indice])
+
             # Executa pesquisa dos termos e salva os resultados na pasta "caminho_pasta"
-            robo.loop_de_pesquisa(numero_processo[indice], caminho_pasta, pasta_download, feriado)
+            robo.loop_de_pesquisa(
+                numero_processo=numero_processo[indice],
+                tipo_instrumento=tipo_instrumento[indice].strip(),
+                caminho_pasta=caminho_pasta,
+                pasta_download=pasta_download,
+                feriado=feriado
+            )
 
             # Confirma se houve atualização na pasta e envia email para o técnico
             confirma_email = list(robo.condicao_email(numero_processo=numero_processo[indice],
                                                       caminho_pasta=caminho_pasta))
             if confirma_email:
-                robo.salva_progresso(arquivo_log, numero_processo[indice], confirma_email[2], indice=indice)
-        else:
-            # Cria pasta com número do processo
-            caminho_pasta = robo.criar_pasta(numero_processo[indice],
-                                             caminho_pasta_onedrive=caminho_pasta_onedrive,
-                                             tipo_instrumento=tipo_instrumento[indice])
-            # Executa pesquisa dos termos e salva os resultados na pasta "caminho_pasta"
-            robo.loop_de_pesquisa(numero_processo[indice], caminho_pasta, pasta_download, feriado)
+                robo.salva_progresso(arquivo_log,numero_processo[indice], confirma_email[2], indice=indice)
 
-            # Confirma se houve atualização na pasta e envia email para o técnico
-            confirma_email = list(robo.condicao_email(
-                numero_processo=numero_processo[indice], caminho_pasta=caminho_pasta)
-            )
-            if confirma_email:
-                robo.salva_progresso(arquivo_log=arquivo_log, processo_visitado=numero_processo[indice], arquivos_baixados=confirma_email[2], indice=indice)
+        except Exception as e:
+            print(f"\n❌ Erro ao processar o índice {indice} ({numero_processo[indice]}): {e}")
+            robo.consulta_instrumento()
+            # Você pode salvar o erro em log aqui, se quiser
+            continue  # Continua para o próximo processo
 
 
 def count_empty_folders(directory):
@@ -981,12 +1136,59 @@ def count_empty_folders(directory):
         print(f"No empty folders found in '{directory}'.")
 
 
+def hash_file(file_path, block_size=65536):
+    """Calculates SHA-256 hash of a file."""
+    sha256 = hashlib.sha256()
+    try:
+        with open(file_path, 'rb') as f:
+            for block in iter(lambda: f.read(block_size), b''):
+                sha256.update(block)
+        return sha256.hexdigest()
+    except Exception as e:
+        print(f"⚠️ Erro ao calcular hash de {file_path}: {e}")
+        return None
+
+
+def delete_duplicate_files(directory, recursive=False):
+    """
+    Deletes duplicate files in a directory based on file content (SHA-256 hash).
+
+    Parameters:
+        directory (str): Path to the target folder
+        recursive (bool): Whether to search subdirectories
+    """
+    seen_hashes = {}
+    deleted_files = []
+
+    for dirpath, dirnames, filenames in os.walk(directory):
+        for filename in filenames:
+            full_path = os.path.join(dirpath, filename)
+            file_hash = hash_file(full_path)
+
+            if file_hash is None:
+                continue  # Skip unreadable files
+
+            if file_hash in seen_hashes:
+                try:
+                    os.remove(full_path)
+                    deleted_files.append(full_path)
+                    print(f"🗑️ Duplicado removido: {full_path}")
+                except Exception as e:
+                    print(f"❌ Erro ao deletar {full_path}: {e}")
+            else:
+                seen_hashes[file_hash] = full_path
+
+        if not recursive:
+            break  # Exit after the top-level directory
+
+    print(f"\n✅ Concluído. {len(deleted_files)} arquivos duplicados deletados.")
+    return deleted_files
 if __name__ == "__main__":
     start_time = time.time()
 
-    #main()
+    main()
     count_empty_folders(r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
-                        r'Assistência Social\Automações SNEAELIS\Resultados Robô Mérito-Custos')
+                        r'Assistência Social\Automações SNEAELIS\analise_custo_leidiane')
 
     end_time = time.time()
     tempo_total = end_time - start_time
