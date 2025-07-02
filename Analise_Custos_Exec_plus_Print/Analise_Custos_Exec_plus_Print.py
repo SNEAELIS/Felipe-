@@ -265,8 +265,6 @@ class Robo:
                 # Encontra a tabela de anexos
                 tabela = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.ID, 'listaAnexos')))
-                # Encontra todas as linhas da tabela
-                linhas = tabela.find_elements(By.XPATH, './/tbody/tr')
                 # Diz quantas páginas tem
                 paginas = self.conta_paginas(tabela)
 
@@ -276,42 +274,37 @@ class Robo:
                     for pagina in range(1, paginas + 1):
                         int(pagina)
                         if pg > pagina:
-                            print('pulando página')
+                            print('🌀📄 pulando página')
                             continue
 
                         # Ensure the error log has a list for the current page
                         while len(err) < pagina:
                             err.append([])
 
+                        # Check if the last page was the tenth page, this site has a max of 10 pages /block
                         if pagina > 1:
-                            self.driver.find_element(By.LINK_TEXT, f'{pagina}').click()
-                            # Encontra a tabela na página atual
-                            tabela = self.driver.find_element(By.ID, 'listaAnexos')
+                            if (pagina - 1) % 10 == 0:
+                                self.driver.find_element(By.XPATH, '//*[@id="listaAnexos"]/span[2]/a[10]').click()
 
-                            # Encontra todas as linhas da tabela atual
-                            linhas = tabela.find_elements(By.TAG_NAME, 'tr')
+                            elif (pagina - 1) % 10 != 0:
+                                self.driver.find_element(By.LINK_TEXT, f'{pagina}').click()
+
+                        # Encontra a tabela na página atual
+                        tabela = self.driver.find_element(By.ID, 'listaAnexos')
+                        # Encontra todas as linhas da tabela atual
+                        linhas = tabela.find_elements(By.XPATH, './/tbody/tr')
 
                         for indice, linha in enumerate(linhas):
-                            if indice in err[pagina-1]:
-                                print(
-                                    f"🔄 Pulando linha {indice}. Motivo: erro registrado")
-                                continue
+                            # Pagina - 1 is to correct the index, synce pagina starts @ 1 and list idx @ 0
                             if err[pagina-1]:
-                                if indice < err[pagina - 1][-1]:
+                                if indice <= err[pagina - 1][-1]:
+                                    print(f'⏭️ pulando linha: {indice}')
                                     continue
+
                             try:
-                                # Pega o valor da data em formato string
-                                elemento_data_site = linha.find_element(By.CLASS_NAME, 'dataUpload')
-                                data_site = elemento_data_site.text if elemento_data_site else None
-                                try:
-                                    # Compara a data do site com a última data registada na planilha
-                                    if self.compara_data(data_site, feriado):
-                                        # Pega o elemento do botão de download e deixa selecionado
-                                        botao_download = linha.find_element(By.CLASS_NAME, 'buttonLink')
-                                        if botao_download:
-                                            botao_download.click()
-                                except Exception as e:
-                                    print(f'❌ Botã de download não encontrado. erro: {type(e).__name__}.')
+                                botao_download = linha.find_element(By.CLASS_NAME, 'buttonLink')
+                                if botao_download:
+                                    botao_download.click()
                             except StaleElementReferenceException:
                                 try:
                                     linha_erro = indice - 1
@@ -403,8 +396,7 @@ class Robo:
 
 
     # Salva a página do browser em PDF e separa o top
-    @staticmethod
-    def print_page(driver, pasta_download: str, pdf_path: str, crop_height: int = 280):
+    def print_page(self, pasta_download: str, pdf_path: str, crop_height: int = 280):
         """
            Função para automatizar o processo de impressão da página atual do navegador Chrome como PDF,
            salvando o arquivo em um caminho especificado e, em seguida, recortando as primeiras páginas
@@ -460,8 +452,9 @@ class Robo:
            - O destino padrão do diálogo de impressão deve estar como "Salvar como PDF".
            - O recorte é realizado apenas nas duas primeiras páginas do PDF.
            """
+        driver = self.driver
         # Salva a tela do navegar com PDF
-        def save_chrome_screen_as_pdf(max_attempts=3, initial_delay=1, print_delay=2, save_delay=3):
+        def save_chrome_screen_as_pdf(max_attempts=3, print_delay=2, save_delay=3):
             """
             Automatiza o processo de impressão da aba atual do Chrome para PDF.
             Pressupõe que o Chrome está em foco e que 'Salvar como PDF' é a opção padrão no diálogo de impressão.
@@ -475,6 +468,7 @@ class Robo:
             delay_after_save : float
                 Tempo de espera (em segundos) para a conclusão do salvamento do arquivo.
             """
+
             attempts = 0
             while attempts < max_attempts:
                 try:
@@ -483,7 +477,7 @@ class Robo:
                     if chrome_window:
                         chrome_window[0].activate()
 
-                    WebDriverWait(driver=driver, timeout=10).until(EC.presence_of_element_located((
+                    WebDriverWait(driver, timeout=10).until(EC.presence_of_element_located((
                         By.XPATH, '//*[@id="form_submit"]')))
 
                     # Open print dialog
@@ -504,10 +498,15 @@ class Robo:
                     # Wait for file to actually save
                     time.sleep(save_delay)
 
+                    # Return to previous screen, IMPORTANT uses (alt + <-) hotkey
+                    pyautogui.hotkey('alt ', 'left')
+
+
                     # Verify file exists before proceeding
                     if Path(pdf_path).exists():
                         print(f"✅ PDF saved to: {pdf_path}")
                         return True
+
 
                 except Exception as er:
                     print(f'Attempt {attempts + 1} failed: {str(er)[:80]}')
@@ -516,6 +515,7 @@ class Robo:
 
                 print(f"❌ Failed to save PDF after multiple attempts.")
                 return False
+
         # Recorta o topo do PDF para retirar dados pessoais e informações inuteis
         def crop_pdf():
             """
@@ -668,7 +668,7 @@ class Robo:
                             botao_detalhar.click()
 
                             # Print page and handle subsequent actions
-                            self.print_page(pasta_download=pasta_download, pdf_path=unique_pdf_path)
+                            self.print_page(pasta_download=pasta_download, pdf_path=unique_pdf_path,)
 
                             # Use explicit wait for the final button
                             self.driver.execute_script(
@@ -799,7 +799,7 @@ class Robo:
             paginas = tabela.find_element(By.TAG_NAME, 'span').text
             paginas = paginas.split('(')[0]
             paginas.strip()
-            paginas = int(paginas[-2])
+            paginas = int(paginas[-3:])
             return paginas
         except NoSuchElementException:
             paginas = 1
@@ -1275,7 +1275,6 @@ def main(feriado=2) -> None:
     inicio_range = 0
     if progresso["indice"] > 0:
         inicio_range = progresso["indice"] + 1
-
 
     for indice in range(inicio_range, max_linha):
         eta()
