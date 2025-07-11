@@ -592,7 +592,6 @@ def main():
     numero_processo, tipo_instrumento= robo.extrair_dados_excel(caminho_arquivo_fonte=caminho_arquivo_fonte,
                                                                 busca_id='Nº CONVÊNIO',
                                                                 tipo_instrumento_id='MODO')
-
     max_linha = len(numero_processo)
 
     # Pergunta ao usuário se deseja resetar o log
@@ -608,7 +607,6 @@ def main():
         min_linha = progresso["indice"]
     else:
         min_linha = 0
-
     # Loop principal para processar cada linha do Excel
     for indice in range(min_linha, max_linha):
         print(f'Processo: {numero_processo[indice]}.\n Índice: {indice} do total: {max_linha}')
