@@ -1,12 +1,10 @@
 from selenium import webdriver
 from selenium.common import WebDriverException, TimeoutException, NoSuchElementException
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.devtools.v85.fetch import continue_request
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from twisted.internet.defer import passthru
 from webdriver_manager.chrome import ChromeDriverManager
 from datetime import datetime, timedelta
 #from itertools import islice
@@ -25,18 +23,23 @@ class Robo:
         """
         try:
             # Configuração do registro
-            #self.arquivo_registro = ''
             # Inicia as opções do Chrome
             self.chrome_options = webdriver.ChromeOptions()
             # Endereço de depuração para conexão com o Chrome
+            self.chrome_options.add_argument("--disable-extensions")  # Disables all extensions
             self.chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
             # Inicializa o driver do Chrome com as opções e o gerenciador de drivers
             self.driver = webdriver.Chrome(
                 service=Service(ChromeDriverManager().install()),
                 options=self.chrome_options)
-            self.driver.switch_to.window(self.driver.window_handles[0])
 
-            print("✅ Conectado ao navegador existente com sucesso.")
+            handles = self.driver.window_handles
+            print(handles)
+            self.driver.switch_to.window(handles[-1])
+
+            print("✅ Conectado ao navegador existente com sucesso.", "\nCurrent URL:",
+                  self.driver.current_url)
+
         except WebDriverException as e:
             # Imprime mensagem de erro se a conexão falhar
             print(f"❌ Erro ao conectar ao navegador existente: {e}")
@@ -387,7 +390,7 @@ class Robo:
             print(f"✅ Sucesso em acessar a página de busca de processo")
 
         except Exception as e:
-            print(f'❌ Falha ao consultar o processo {e}')
+            print(f'❌ Falha ao consultar o processo {str(e)[:80]}')
             sys.exit(1)
 
     # Loop que acessa os vários instrumentos para buscar os dados
@@ -461,8 +464,8 @@ class Robo:
             qnt_abas = self.driver.window_handles
             self.driver.switch_to.window(qnt_abas[num_aba])
             print(f"🔁 Mudou para a aba {num_aba}.")
-        except Exception:
-            print("❌ Falha ao tentar mudar de aba.")
+        except Exception as e:
+            print(f"❌ Falha ao tentar mudar de aba.\nError: {type(e).__name__}")
 
     # fecha a aba atual
     def fecha_aba(self):
@@ -481,6 +484,7 @@ class Robo:
                 pagina += 1
                 time.sleep(0.3)
                 self.driver.find_element(By.LINK_TEXT, f'{pagina}').click()
+                print(f"➡️📄 Mudando para página {pagina}/{max_pagina}")
         except Exception as e:
             print(f'📄❌ Erro ao passar de página {e}')
 
@@ -491,15 +495,15 @@ class Robo:
                 EC.element_to_be_clickable((By.ID, nome_tabela)))
             return tabela
         except Exception as e:
-            print(f"❌ Erro ao buscar itens da tabela: {e}")
+            print(f"❌ Erro ao buscar itens da tabela: {type(e).__name__}")
 
     # Acha as linhas da tabela
     def linhas(self, tabela):
         try:
             linhas = tabela.find_elements(By.TAG_NAME, 'tr')
             return linhas
-        except Exception:
-            print('❌ Falha ao tentar achar as linhas')
+        except Exception as e:
+            print(f'❌ Falha ao tentar achar as linhas: {type(e).__name__}')
 
     # Baixa os arquivos
     def baixa_arquivo(self, linhas):
@@ -512,7 +516,7 @@ class Robo:
                 if botao_download:
                     botao_download.click()
                     print(f'💾{linha.find_element(By.CLASS_NAME,'nomeArquivo').text}\n')
-            except Exception:
+            except Exception as e :
                 print('❌ Botã de download não encontrado.')
 
     # Salva o progresso em um arquivo json
@@ -575,8 +579,9 @@ def main():
     pasta_destino = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e'
                               r' Assistência Social\Automações SNEAELIS\CGAC_2024')
 
-    caminho_arquivo_fonte = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento'
-                             r' e Assistência Social\Teste001\CGAC_2024_dataSource_filtered.xlsx')
+    caminho_arquivo_fonte = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
+                             r'Assistência Social\Automações '
+                             r'SNEAELIS\CGAC_2024\CGAC_2024_dataSource_filtered.xlsx')
 
     cgac_arquivo_log = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
                         r'Assistência Social\Automações SNEAELIS\CGAC_2024\CGAC_arquivo_log.json')
@@ -592,6 +597,8 @@ def main():
     numero_processo, tipo_instrumento= robo.extrair_dados_excel(caminho_arquivo_fonte=caminho_arquivo_fonte,
                                                                 busca_id='Nº CONVÊNIO',
                                                                 tipo_instrumento_id='MODO')
+    numero_processo = ['929833']
+
     max_linha = len(numero_processo)
 
     # Pergunta ao usuário se deseja resetar o log
@@ -636,10 +643,11 @@ def main():
                 if 10 < pagina and pagina % 10 != 0 :
                     linhas = robo.linhas(tabela=tabela)
                     abas = robo.abre_abas(linhas=linhas)
+                    time.sleep(1)
 
                     # Loop para processar cada aba aberta
                     while abas > 1:
-                        robo.muda_aba(1)
+                        robo.muda_aba(-1)
                         tabela = robo.acha_tabela(nome_tabela='arquivos')
                         linhas = robo.linhas(tabela=tabela)
                         robo.baixa_arquivo(linhas=linhas)
@@ -668,9 +676,10 @@ def main():
                     print(f'Pagina {pagina} aberta')
                     linhas = robo.linhas(tabela=tabela)
                     abas = robo.abre_abas(linhas=linhas)
+                    time.sleep(1)
 
                     while abas > 1:
-                        robo.muda_aba(1)
+                        robo.muda_aba(-1)
                         tabela = robo.acha_tabela(nome_tabela='arquivos')
                         linhas = robo.linhas(tabela=tabela)
                         robo.baixa_arquivo(linhas=linhas)
@@ -696,9 +705,10 @@ def main():
                 else:
                     linhas = robo.linhas(tabela=tabela)
                     abas = robo.abre_abas(linhas=linhas)
+                    time.sleep(1)
 
                     while abas > 1:
-                        robo.muda_aba(1)
+                        robo.muda_aba(-1)
                         tabela = robo.acha_tabela(nome_tabela='arquivos')
                         linhas = robo.linhas(tabela=tabela)
                         robo.baixa_arquivo(linhas=linhas)
@@ -709,6 +719,7 @@ def main():
                     robo.proxima_pag(pagina=pagina, max_pagina=paginas)
                     robo.driver.find_element(By.XPATH, loop_saida_bug[1]).click()
                     robo.proxima_pag(pagina=pagina, max_pagina=paginas)
+
             except Exception:
                 pass
 

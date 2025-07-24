@@ -565,7 +565,7 @@ class Robo:
                 page_num = 0
                 doc = fitz.open(newest_pdf)
                 for page in doc:
-                    if page_num > 1:
+                    if page_num > 0:
                         break
                     rect = page.rect
                     new_rect = fitz.Rect(
