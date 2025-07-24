@@ -1,3 +1,6 @@
+import time
+import pandas as pd
+
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -7,8 +10,7 @@ from selenium.common.exceptions import (TimeoutException, NoSuchElementException
                                         ElementClickInterceptedException, WebDriverException,
                                         StaleElementReferenceException, ElementNotInteractableException)
 from selenium.webdriver.chrome.service import Service
-import pandas as pd
-import time
+
 
 # Função para conectar ao navegador já aberto
 def conectar_navegador_existente():
