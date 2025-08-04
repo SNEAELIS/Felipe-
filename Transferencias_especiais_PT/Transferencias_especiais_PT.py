@@ -10,7 +10,8 @@ from selenium.webdriver.chrome.service import Service
 import pandas as pd
 import time
 import sys
-import traceback
+
+
 
 
 # Função para conectar ao navegador já aberto
@@ -20,7 +21,6 @@ def conectar_navegador_existente():
     """
     try:
         # Configuração do registro
-        #  .arquivo_registro = ''
         # Inicia as opções do Chrome
         chrome_options = webdriver.ChromeOptions()
         # Endereço de depuração para conexão com o Chrome
@@ -29,13 +29,13 @@ def conectar_navegador_existente():
         driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
             options=chrome_options)
-        driver.switch_to.window(driver.window_handles[0])
+
         print("✅ Conectado ao navegador existente com sucesso.")
 
         return driver
     except WebDriverException as e:
         # Imprime mensagem de erro se a conexão falhar
-        print(f"❌ Erro ao conectar ao navegador existente: {e}")
+        print(f"❌ Erro ao conectar ao navegador existente: {type(e).__name__}\nError: {str(e)[:200]}...")
 
 
 # Trunca a mensagem de erro
@@ -503,12 +503,12 @@ def extrat_all_cells_text(driver, table_xpath, col_idx, timeout=10):
             # Get current page information (e.g., current page number text or unique identifier)
             try:
                 pagination_info = driver.find_element(By.XPATH,
-                                                      '/html/body/transferencia-especial-root/br-main-layout/div/div'
-                                                      '/div/main/transferencia-especial-main/transferencia-plano-acao'
-                                                      '/transferencia-cadastro/br-tab-set/div/nav'
-                                                      '/transferencia-plano-acao-dados-orcamentarios/br-table[2]/div'
-                                                      '/ngx-datatable/div/datatable-footer/div/br-pagination-table'
-                                                      '/div/br-select[2]')
+                       '/html/body/transferencia-especial-root/br-main-layout/div/div'
+                       '/div/main/transferencia-especial-main/transferencia-plano-acao'
+                       '/transferencia-cadastro/br-tab-set/div/nav'
+                       '/transferencia-plano-acao-dados-orcamentarios/br-table[2]/div'
+                       '/ngx-datatable/div/datatable-footer/div/br-pagination-table'
+                       '/div/br-select[2]')
                 pagination_info = pagination_info.text.strip()
             except NoSuchElementException:
                 pagination_info = str(current_page)
@@ -534,7 +534,7 @@ def extrat_all_cells_text(driver, table_xpath, col_idx, timeout=10):
                         col_data.append(text)
             try:
                 next_button = driver.find_element(By.XPATH,
-                                                  '//button[contains(@class, "br-button") and contains(@class, "next")]')
+                              '//button[contains(@class, "br-button") and contains(@class, "next")]')
                 if not next_button.is_enabled():
                     print("ℹ️ No more pages to process")
                     break
@@ -614,6 +614,7 @@ def loop_primeira_pagina(driver, plano_acao: dict):
         'datatable-body-row/div[2]/datatable-body-cell[1]/div'
     ]
 
+    time.sleep(3)
     plano_acao["beneficiario"]["nome"] = obter_valor_campo_desabilitado(driver, lista_caminhos[0])
     plano_acao["beneficiario"]["uf"] = obter_valor_campo_desabilitado(driver, lista_caminhos[1])
     plano_acao["dados_bancarios"]["banco"] = obter_valor_campo_desabilitado(driver, lista_caminhos[2])
@@ -695,7 +696,7 @@ def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
     try:
         # Aba Dados Orçamentários
         clicar_elemento(driver, lista_caminhos[0])
-        time.sleep(0.5)
+        time.sleep(3)
 
         # Empenho section
         plano_acao["pagamentos"]["empenho"] = extrat_all_cells_text(driver, lista_caminhos[1], 0)
@@ -704,7 +705,7 @@ def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
 
         # Aba Plano de Trabalho
         clicar_elemento(driver, lista_caminhos[2])
-        time.sleep(0.5)
+        time.sleep(5)
 
         # Declarações section
         plano_acao["declaracoes"]["recursos_orcamento"] = get_radio_selection(driver)
@@ -723,7 +724,7 @@ def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
         plano_acao["periodo_exec"] = obter_valor_campo_desabilitado(driver, lista_caminhos[6])
 
         # Histórico section
-        coletar_dados_hist(driver, lista_caminhos[7], index=index, df_path=df_path)
+        #coletar_dados_hist(driver, lista_caminhos[7], index=index, df_path=df_path)
 
         # Execução and Metas section
         coletar_dados_listas(driver, lista_caminhos[8], index=index, df=df, df_path=df_path)
@@ -963,12 +964,12 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
 
             # Find all goal elements with retry logic
             goals = None
-            for _ in range(3):  # Retry up to 3 times
+            for _ in range(10):  # Retry up to 3 times
                 try:
                     goals = driver.find_elements(By.XPATH, f"{metas_path}//datatable-body-row")
                     if goals:
                         break
-                    time.sleep(0.5)
+                    time.sleep(1)
                 except StaleElementReferenceException:
                     continue
 
@@ -1092,7 +1093,7 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
         except Exception as err:
             print(f"❌ Erro ao identificar a tabela dados de controle social."
                   f"\n{type(err).__name__} - {truncate_error(str(err))}")
-
+            return [""] * 3
     try:
         if clicar_elemento(driver=driver, xpath=tabela_xpath, prt=False):
             pass
@@ -1104,9 +1105,23 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
     insert_index = index
     # 📝 Save only the relevant columns to Excel
     colunas_para_salvar = [
-        "Executor", "Objeto", "Meta", "Descrição", "Unidade de Medida", "Quantidade",
-        "Meses Previstos", "Categoria", "Emenda Especial", "Recurso Próprio", "Rendimento de Aplicação",
-        "Doações", "Email", "Responsável_Social", "Data/Hora_Social", "Endereço_Eletrônico_Social"]
+        "Executor",
+        "Objeto",
+        "Meta",
+        "Descrição",
+        "Unidade de Medida",
+        "Quantidade",
+        "Meses Previstos",
+        "Categoria",
+        "Emenda Especial",
+        "Recurso Próprio",
+        "Rendimento de Aplicação",
+        "Doações",
+        "Email",
+        "Responsável_Social",
+        "Data/Hora_Social",
+        "Endereço_Eletrônico_Social"
+    ]
     # Get data before expanding "metas" this is done to avoid duplicating these two information
     executor_dict = {
         "Executor": '',
@@ -1227,7 +1242,6 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                     # Fill existing empty row
                     for col in colunas_para_salvar:
                         df.at[insert_index, col] = row_to_insert.get(col, "")
-                    print(f"✏️ Dados inseridos na linha existente {insert_index}")
                 else:
                     insert_index += 1
                     # Convert the new data to a DataFrame
@@ -1237,7 +1251,6 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                     upper = df.iloc[:insert_index]
                     lower = df.iloc[insert_index:]
                     df = pd.concat([upper, new_row_df, lower], ignore_index=True)
-                    print(f"✏️ Nova linha criada na posição {insert_index + 1}")
 
                 # Reset social data so it's not duplicated
                 nova_linha_data.update({
@@ -1251,15 +1264,23 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                     meta_custeio = metas[i + 1]
                     meta_investimento = metas[i + 2]
 
+                    # Reset values
+                    nova_linha_data.update({
+                        "Meta":  "",
+                        "Descrição":  "",
+                        "Unidade de Medida":  "",
+                        "Quantidade": "",
+                        "Meses Previstos":  ""
+                    })
+
                     # Now, you can safely build your nova_linha_data and financial_rows like this:
                     nova_linha_data.update({
                         "Meta": meta_main.get("meta", ""),
                         "Descrição": meta_main.get("descrição", ""),
                         "Unidade de Medida": meta_main.get("unidade_medida", ""),
                         "Quantidade": meta_main.get("quantidade", ""),
-                        "Meses_previstos": meta_main.get("meses_previstos", ""),
+                        "Meses Previstos": meta_main.get("meses_previstos", "")
                     })
-
                     financial_rows = [
                         {
                             "Categoria": meta_custeio.get("categoria", ""),
@@ -1294,7 +1315,6 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                                 for col in colunas_para_salvar_fin:
                                     df.at[insert_index, col] = f.get(col, "")
 
-                                print(f"✏️️ Dados inseridos na linha existente {insert_index}")
                             else:
                                 insert_index += 1
 
@@ -1308,8 +1328,6 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
 
                                 df = pd.concat([upper, new_row_df, lower], ignore_index=True)
 
-                                print(f"✏️ Nova linha criada na posição {insert_index + 1}")
-
                         # Add 'metas' data
                         current_row_empty = True
                         if insert_index < len(df):
@@ -1320,12 +1338,12 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                                                                            colunas_para_salvar[13:]))
                         # Select columns
                         colunas_para_salvar_sel = colunas_para_salvar[:7] + colunas_para_salvar[13:]
+
                         if current_row_empty and insert_index < len(df):
                             # Fill existing empty row
                             for col in colunas_para_salvar_sel:
                                 df.at[insert_index, col] = nova_linha_data.get(col, "")
 
-                            print(f"✏️ Dados inseridos na linha existente {insert_index}")
                         else:
                             insert_index += 1
 
@@ -1338,8 +1356,6 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                             lower = df.iloc[insert_index:]
 
                             df = pd.concat([upper, new_row_df, lower], ignore_index=True)
-
-                            print(f"✏️ Nova linha criada na posição {insert_index + 1}")
 
                     except Exception as erro:
                         print(f"❌ Erro ao salvar listas no Excel: {type(erro).__name__} -"
@@ -1457,6 +1473,7 @@ def atualiza_excel(df_path, df, index, plano_acao: dict, col_range: list = None,
 
     selected_keys = [
         "pagamentos.empenho",
+        "pagamentos.valor",
         "pagamentos.ordem",
         "declaracoes.recursos_orcamento",
         "classificacao_orcamentaria",
@@ -1527,7 +1544,7 @@ def main():
     driver = conectar_navegador_existente()
 
     planilha_final = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
-                      r"Social\Teste001\Sofia\Sofia Emendas PIX 2023 - Copia.xlsx")
+                      r"Social\Teste001\Sofia\Sofia Emendas PIX 2020 - Copia.xlsx")
 
     try:
         df = pd.read_excel(planilha_final, engine='openpyxl').astype(object)
@@ -1550,7 +1567,7 @@ def main():
         index = 0
         # for index, row in df.iterrows():
         while index < len(df):
-            print(f'Tamanho do DataFrame {len(df)}'.center(50))
+            print(f'Procentagem completa: {(index/len(df) * 100)}%'.center(50))
 
             row = df.iloc[index]
             plano_acao = {
@@ -1575,6 +1592,7 @@ def main():
                 ,
                 "pagamentos": {
                     "empenho": "",  # Número do empenho
+                    "valor": "", # Valor total
                     "ordem": "",  # Número da ordem de pagamento
 
                 },
@@ -1590,10 +1608,12 @@ def main():
                     "descricao": "",  # Descrição da meta
                     "unidade": "",  # Unidade de medida
                     "quantidade": "",  # Quantidade prevista
+                    "meses_previstos": "", # Meses previstos
                 },
                 "historico": {
-                    "sistema": "",  # Histórico registrado no sistema
-                    "concluido": ""  # Histórico após conclusão
+                    "responsavel": "",  # Histórico registrado no sistema
+                    "data": "",
+                    "situacao": ""  # Histórico após conclusão
                 },
                 "controle_social": {
                     "conselhos": "",  # Informações dos conselhos locais
@@ -1677,12 +1697,11 @@ def main():
                                     f" Último código na tabela: {codigo_tabela}")
 
                 # Clica em "Detalhar" somente se o código estiver correto
-                detalhar_xpath = ("/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/"
-                                  "transferencia-especial-main/transferencia-plano-acao/"
-                                  "transferencia-plano-acao-consulta/br-table/div/ngx-datatable/div/"
-                                  "datatable-body/datatable-selection/datatable-scroller/"
-                                  "datatable-row-wrapper/datatable-body-row/div[2]/datatable-body-cell[8]/"
-                                  "div/div/button/i")
+                detalhar_xpath = ("/html/body/transferencia-especial-root/br-main-layout/div/div/div/main"
+                                  "/transferencia-especial-main/transferencia-plano-acao/transferencia"
+                                  "-plano-acao-consulta/br-table/div/ngx-datatable/div/datatable-body"
+                                  "/datatable-selection/datatable-scroller/datatable-row-wrapper/datatable"
+                                  "-body-row/div[2]/datatable-body-cell[9]/div/div/button")
 
                 if not clicar_elemento(driver, detalhar_xpath):
                     raise Exception("Falha ao clicar em 'Detalhar'")
@@ -1757,7 +1776,7 @@ def main():
                 continue
 
         print("✅ Todos os dados foram coletados e salvos na planilha!")
-
+        driver.quit()
     except Exception as erro:
         last_error = truncate_error(f"Element intercepted: {str(erro)}, {type(erro).__name__}")
         print(f"❌ {last_error}")
