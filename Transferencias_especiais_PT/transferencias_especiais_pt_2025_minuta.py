@@ -325,7 +325,7 @@ def obter_valor_campo_desabilitado(driver, xpath, call=None):
             elemento = WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.XPATH, xpath)))
         except TimeoutException:
-            print(f"⏱️ Timeout: Elemento não encontrado em 5s - {truncate_error(xpath)}")
+            print(f"⏱️ Timeout: Elemento não encontrado em 5s - {truncate_error(xpath, 500)}")
             return "Campo Vazio"
         except NoSuchElementException:
             print(f"🔍 Elemento não existe - {truncate_error(xpath)}")
@@ -604,13 +604,15 @@ def loop_primeira_pagina(driver, plano_acao: dict):
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
         '-basicos/form/br-fieldset[3]/fieldset/div[2]',
 
-        # Objeto de Execução [10]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
-        '-basicos/form/br-fieldset[3]/fieldset/div[2]/div[1]/div/br-textarea/div/div[1]/div/textarea'
+        # Programações Orçamentárias selecionadas [10]
+        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/'
+        'transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/'
+        'transferencia-plano-acao-dados-basicos/form/br-fieldset[3]/fieldset/div[2]/div[2]/div/br-table/div/'
+        'ngx-datatable/div/datatable-body/datatable-selection/datatable-scroller/datatable-row-wrapper/'
+        'datatable-body-row/div[2]/datatable-body-cell[1]/div'
     ]
 
-    time.sleep(1.5)
+    time.sleep(3)
     plano_acao["beneficiario"]["nome"] = obter_valor_campo_desabilitado(driver, lista_caminhos[0])
     plano_acao["beneficiario"]["uf"] = obter_valor_campo_desabilitado(driver, lista_caminhos[1])
     plano_acao["dados_bancarios"]["banco"] = obter_valor_campo_desabilitado(driver, lista_caminhos[2])
@@ -625,7 +627,7 @@ def loop_primeira_pagina(driver, plano_acao: dict):
 
     plano_acao["finalidade"] = extract_all_rows_text(driver=driver, table_xpath=lista_caminhos[9])
 
-    plano_acao["objeto_de_execução"] = obter_valor_campo_desabilitado(driver, lista_caminhos[10])
+    plano_acao["programacoes_orcamentarias"] = extract_all_rows_text(driver, lista_caminhos[10])
 
     return plano_acao
 
@@ -634,7 +636,7 @@ def loop_primeira_pagina(driver, plano_acao: dict):
 def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
     """ Loop que pega dados da segunda aba em diante"""
     # [0] Aba Dados Orçamentários
-    # [1] Pagamentos Empenho ; Pagamentos Valor ; Pagamentos Ordem
+    # [1] Pagamentos minuta ; Pagamentos Valor ; Pagamentos Ordem
     # [2] Aba Plano de Trabalho
     # [3] Declaracoes Nao Uso Pessoal ; Recursos no Orçamento do Beneficiário
     # [4] Classificação Orçamentária de Despesa
@@ -651,7 +653,7 @@ def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
         # [1]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
-        '-orcamentarios/br-table[2]/div/ngx-datatable',
+        '-orcamentarios/br-table/div/ngx-datatable',
 
         # [2]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/'
@@ -694,10 +696,10 @@ def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
         clicar_elemento(driver, lista_caminhos[0])
         time.sleep(3)
 
-        # Empenho section
-        plano_acao["pagamentos"]["empenho"] = extrat_all_cells_text(driver, lista_caminhos[1], 0)
+        # minuta section
+        plano_acao["pagamentos"]["minuta"] = extrat_all_cells_text(driver, lista_caminhos[1], 0)
         plano_acao["pagamentos"]["valor"] = extrat_all_cells_text(driver, lista_caminhos[1], 3)
-        plano_acao["pagamentos"]["ordem"] = extrat_all_cells_text(driver, lista_caminhos[1], 5)
+        plano_acao["pagamentos"]["ordem"] = ''
 
         # Aba Plano de Trabalho
         clicar_elemento(driver, lista_caminhos[2])
@@ -717,7 +719,7 @@ def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
 
         # Prazo de Execução em meses \\ Periodo_exec
         plano_acao["prazo_de_execucao"] = obter_valor_campo_desabilitado(driver, lista_caminhos[5])
-        plano_acao["periodo_exec"] = obter_valor_campo_desabilitado(driver, lista_caminhos[6])
+        #plano_acao["periodo_exec"] = obter_valor_campo_desabilitado(driver, lista_caminhos[6])
 
         # Histórico section
         #coletar_dados_hist(driver, lista_caminhos[7], index=index, df_path=df_path)
@@ -1041,55 +1043,6 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
             print(f"❌ Erro crítico ao extrair metas: {type(e).__name__} - {e}")
             return []
 
-    def extract_social_control_data():
-        try:
-            remover_backdrop(driver)
-            _wait_for_angular_stable()
-            rows_sc_path = ("/html/body/transferencia-especial-root/br-main-layout/"
-                            "div/div/div/main/transferencia-especial-main/"
-                            "transferencia-plano-acao/transferencia-cadastro/br-tab-set/"
-                            "div/nav/transferencia-plano-trabalho-executor/br-tab-set/div/"
-                            "nav/br-tab/div/form/br-fieldset[3]/fieldset/div[2]/div[2]/div"
-                            "/br-table/div/ngx-datatable")
-
-            rows_sc = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located(
-                (By.XPATH, f"{rows_sc_path}//datatable-body-row")))
-
-            # Process each row with individual error handling
-            sc_table_data = []
-            grouped_sc_table_data = []
-
-            for row_sc in rows_sc:
-                try:
-                    sc_data_cells = row_sc.find_elements(By.XPATH, ".//datatable-body-cell")
-                    # Extract text from inner div or span
-                    for cell in sc_data_cells:
-                        # Some cells might have <div>, some might have <span>
-                        texts = cell.find_elements(By.XPATH, './div | ./span')
-                        for col in texts:
-                            sc_table_data.append(col.text.strip())
-
-                except Exception as ee:
-                    print(f"⚠️ Erro ao extrair dados da tabela de controle social"
-                          f": {type(ee).__name__} - {truncate_error(str(ee))}")
-
-            # Groups all data with the same index in one list
-            for el in range(0, len(sc_table_data), 3):
-                grouped_sc_table_data.append(sc_table_data[el: el + 3])
-            # Transpose the grouped list and join elements with ' | '
-            if grouped_sc_table_data:
-                transposed = list(zip(*grouped_sc_table_data))
-                organized_sc_list = [' | '.join(map(str, group)) for group in transposed]
-            else:
-                organized_sc_list = []
-
-            print(f"⛏️🎲 Dados Sociais Lista Executores Extraídos")
-            return organized_sc_list
-
-        except Exception as err:
-            print(f"❌ Erro ao identificar a tabela dados de controle social."
-                  f"\n{type(err).__name__} - {truncate_error(str(err))}")
-            return [""] * 3
     try:
         if clicar_elemento(driver=driver, xpath=tabela_xpath, prt=False):
             pass
@@ -1200,9 +1153,6 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                 except Exception as e:
                     print(f"⚠️ Dados não encontrados: {type(e).__name__} - {truncate_error(str(e))}")
 
-                # Get Lista de Conselhos locais ou instâncias de controle social notifications
-                social_control = extract_social_control_data()
-
                 # Get metas
                 try:
                     metas = extract_metas_from_expanded_row()
@@ -1220,9 +1170,9 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                 nova_linha_data.update({
                     "Email": emails_data,
                     # All idexed values using comprehention
-                    "Responsável_Social": social_control[0],
-                    "Data/Hora_Social": social_control[1],
-                    "Endereço_Eletrônico_Social": social_control[2]
+                    "Responsável_Social": '',
+                    "Data/Hora_Social": '',
+                    "Endereço_Eletrônico_Social": ''
                 })
                 # Insert the initial nova_linha_data (email/social) to the DataFrame
                 # Just-in-time merge for DataFrame insertion
@@ -1468,7 +1418,7 @@ def atualiza_excel(df_path, df, index, plano_acao: dict, col_range: list = None,
         """
 
     selected_keys = [
-        "pagamentos.empenho",
+        "pagamentos.minuta",
         "pagamentos.valor",
         "pagamentos.ordem",
         "declaracoes.recursos_orcamento",
@@ -1486,7 +1436,7 @@ def atualiza_excel(df_path, df, index, plano_acao: dict, col_range: list = None,
 
     # Map to Excel columns
     column_headers = [
-        "Empenho", "Valor", "Ordem do Pagamento", "Indicação Orçamento Beneficiario",
+        "Minuta", "Valor", "Ordem do Pagamento", "Indicação Orçamento Beneficiario",
         "Classificação Orçamentária de Despesa", "Declaração Recurso", "Prazo Execução", "Período Execução"
     ]
     if second_init:
@@ -1546,6 +1496,10 @@ def main():
         df = pd.read_excel(planilha_final, engine='openpyxl').astype(object)
         print(f"✅ Planilha lida com {len(df)} linhas.")
 
+        # Volta para a pagina inicial
+        clicar_elemento(driver, '/html/body/transferencia-especial-root/br-main-layout/br-header/'
+                                'header/div/div[2]/div/div[2]/div[1]/a')
+        time.sleep(2)
         # Clica no que menu de navegação
         clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/br-header/"
                                 "header/div/div[2]/div/div[1]/button/span")
@@ -1557,7 +1511,8 @@ def main():
 
         # Clica no ícone para filtrar
         clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/div/div/div/"
-                                "main/transferencia-especial-main/transferencia-plano-acao/transferencia-plano-acao-consulta/br-table/div/div/div/button/i")
+                                "main/transferencia-especial-main/transferencia-plano-acao/transferencia"
+                                "-plano-acao-consulta/br-table/div/div/div/button/i")
 
         # Processa cada linha do DataFrame usando o índice
         index = 0
@@ -1582,12 +1537,12 @@ def main():
                     "valor": "",  ## Valor de investimento
                     "custeio": ""  # Valor de custeio
                 },
-                "finalidade": "",
-
-                "objeto_de_execução": "",  # Dados Complementares do Plano -> Objeto de Execução
-
+                "finalidade": ""
+                ,
+                "programacoes_orcamentarias": ""
+                ,
                 "pagamentos": {
-                    "empenho": "",  # Número do empenho
+                    "minuta": "",  # Número da minuta
                     "valor": "", # Valor total
                     "ordem": "",  # Número da ordem de pagamento
 
@@ -1715,7 +1670,7 @@ def main():
                     col_range=domain,
                     plano_acao=plano_acao,  # Dictionary containing data
                     init_range=0,  # First key to use from flattened dict
-                    fin_range=11  # Last key to use (exclusive)
+                    fin_range=10  # Last key to use (exclusive)
                 )
 
                 print(f"\n{' Inicio do loop da segunda página ':=^60}\n")
