@@ -10,7 +10,10 @@ import numpy as np
 
 import requests
 
+from typing import List
+
 from colorama import  Fore, Style
+from rapidfuzz.distance.DamerauLevenshtein_py import similarity
 
 from thefuzz import process, fuzz
 
@@ -88,7 +91,7 @@ class Robo:
                 action = ActionChains(self.driver)
                 action.move_to_element(img).perform()
                 reset.find_element(By.TAG_NAME, 'a').click()
-                print(Fore.MAGENTA + "\n✅ Processo resetado com sucesso !")
+                #print(Fore.MAGENTA + "\n✅ Processo resetado com sucesso !")
         except NoSuchElementException:
             print('Já está na página inicial do transferegov discricionárias.')
         except Exception as e:
@@ -101,7 +104,7 @@ class Robo:
         try:
             for idx in range(len(xpaths)):
                 self.webdriver_element_wait(xpaths[idx]).click()
-            print(f"{Fore.MAGENTA}✅ Sucesso em acessar a página de busca de processo{Style.RESET_ALL}")
+            #print(f"{Fore.MAGENTA}✅ Sucesso em acessar a página de busca de processo{Style.RESET_ALL}")
         except Exception as e:
             print(Fore.RED + f'🔴📄 Instrumento indisponível. \nErro: {e}')
             sys.exit(1)
@@ -193,7 +196,6 @@ class Robo:
 
     # Mapeia os tipos de despesas nos quatro tipos disponíveis no transferegov
     def map_tipos(self, tipo):
-        try:
             # Helper function with nested try-except
             def map_tipos_helper(txt: str, cat: dict) -> str:
                 try:
@@ -230,9 +232,8 @@ class Robo:
                                    if not unicodedata.combining(c))
 
                 categories = {
-                    'BEM': ['uniforme','material', 'material esportivo','impresso' ,
-                            'identificação', 'divulgação', 'premiação'],
-                    'SERVICO': ['servicos', 'recursos humanos'],
+                    'BEM': ['Material Esportivo', 'Uniformes'],
+                    'SERVICO': ['Recursos Humanos', 'Administrativa', 'Serviços', 'Identidades/Divulgações'],
                     'OBRA': ['obra'],
                     'TRIBUTO': ['tributo'],
                     'OUTROS': ['']
@@ -247,10 +248,6 @@ class Robo:
             except Exception as e:
                 print(f"❌ Erro no processamento do texto: {type(e).__name__} - {str(e)[:100]}")
                 return None
-
-        except Exception as e:
-            print(f"❌ Erro crítico ao mapear tipos de despesa: {type(e).__name__} - {str(e)[:100]}")
-            return None
 
 
     def nav_plano_act_det(self):
@@ -288,6 +285,34 @@ class Robo:
     # Loop para adicionar PAD da proposta
     def loop_de_pesquisa(self, df, numero_processo: str, arquivo_log: str, tipo_desp: str,
                          cod_natur_desp: str, cnpj_xlsx: str):
+        def sanitize_txt(txt:str) -> str:
+            """
+               Sanitizes text by replacing special characters with form-friendly alternatives.
+
+               Args:
+                   text (str): The input text to sanitize.
+
+               Returns:
+                   str: The sanitized text.
+               """
+            try:
+                # Step 1: Remove non-printable characters (control characters)
+                txt = re.sub(r'[\x00-\x1F\x7F]', '', txt)
+                # Step 2: Replace double quotes with single quotes
+                txt = re.sub(r'"', "'", txt)
+                # Step 3: Replace semicolons with commas
+                txt = re.sub(r':', ',', txt)
+                # Step 4: Normalize whitespace (replace multiple spaces with single space,
+                # strip leading/trailing)
+                txt = re.sub(r'\s+', ' ', txt).strip()
+                # Step 5: Replace all special characters (punctuation and symbols) with spaces
+                txt = re.sub(r'[^\w\s]', ' ', txt)
+
+                return txt
+
+            except Exception as err:
+                print(f"Error sanitizing text: {str(err)[:100]}")
+                return txt
         # Inicia o processo de consulta do instrumento
         try:
             # Pesquisa pelo processo
@@ -332,24 +357,36 @@ class Robo:
 
             print('📝 Preenchendo PAD'.center(50, '-'), '\n')
             for idx, row in df.iterrows():
+                print(f"Preenchendo item nº:{idx} {str(row.iloc[2])}\n".center(50))
                 try:
                     # Descrição do item
                     desc_item_txt = str(row.iloc[2]) + '\n' + str(row[3])
+                    desc_item_txt = sanitize_txt(desc_item_txt)
                     self.webdriver_element_wait(lista_campos[0]).send_keys(desc_item_txt)
 
                     # Código da Natureza de Despesa
                     self.webdriver_element_wait(lista_campos[1]).send_keys(cod_natur_desp)
 
                     # Unidade Fornecimento
-                    un_fornecimento = str(row.iloc[5])
+                    un_fornecimento = str(row.iloc[8])
+                    if un_fornecimento == 'mensal':
+                        un_fornecimento = 'MÊS'
+                    elif un_fornecimento == 'unidade':
+                        un_fornecimento = 'UN'
+                    elif un_fornecimento == 'diaria' or un_fornecimento == 'Diária':
+                        un_fornecimento = 'DIA'
                     self.webdriver_element_wait(lista_campos[2]).send_keys(un_fornecimento)
 
                     # Valor Total
-                    valot_total = str(row.iloc[22])+"00"
-                    self.webdriver_element_wait(lista_campos[3]).send_keys(valot_total)
+                    valor_total = str(row.iloc[23])
+                    if '.' in valor_total:
+                        self.webdriver_element_wait(lista_campos[3]).send_keys(valor_total)
+                    else:
+                        valor_total = str(row.iloc[23]) + "00"
+                        self.webdriver_element_wait(lista_campos[3]).send_keys(valor_total)
 
                     # Quantidade
-                    qtd = str(row.iloc[6])+"00"
+                    qtd = str(row.iloc[7])+"00"
                     self.webdriver_element_wait(lista_campos[4]).send_keys(qtd)
 
                     # Endereço de Localização
@@ -373,13 +410,10 @@ class Robo:
                     print(f"Error occurred at line: {exc_tb.tb_lineno}")
                     print(f"❌ Falha ao cadastrar PAD {type(e).__name__}.\n Erro: {str(e)[:80]}")
                     sys.exit()
+            # Botão "Encerrar"
             self.driver.find_elements(By.CSS_SELECTOR, "input#form_submit")[1].click()
+            time.sleep(1)
             self.consulta_proposta()
-
-            print(
-                f"\n{Fore.GREEN}✅ Loop de pesquisa concluído para o processo: {numero_processo}"
-                f"{Style.RESET_ALL}\n")
-
         except TimeoutException as t:
             exc_type, exc_value, exc_tb = sys.exc_info()
             print(f'TIMEOUT {str(t)[:50]}')
@@ -408,7 +442,7 @@ class Robo:
 
         for locator in locators:
             try:
-                print(f'Botão localizado com o seletor {locator[0]}')
+                #print(f'Botão localizado com o seletor {locator[0]}')
                 return self.driver.find_element(*locator)
             except Exception as e:
                 print(f"Falha com localizador {locator}: {str(e)[:80]}")
@@ -450,55 +484,55 @@ class Robo:
 
 
     # Salva o progresso em um arquivo json
-    def salva_progresso(self, arquivo_log: str, indice: int):
+    def salva_progresso(self, arquivo_log: str, nome_arquivo: str):
         """
         Salva o progresso atual em um arquivo JSON.
-        :param arquivo_log: Endereço do arquivo JSON
-        :param indice: Diz qual linha o programa iterou por último.
+        :param arquivo_log: Endereço do arquivo JSON.
+        :param nome_arquivo: O nome do arquivo que foi executado.
         """
+
         # Carrega os dados antigos
-        dados_log = self.carrega_progresso(arquivo_log=arquivo_log)
+        lista_arquivos = self.carrega_progresso(arquivo_log=arquivo_log)
 
-        # Carrega os dados novos
-        novo_item = {
-            "indice": indice
-        }
+        # Verifica se o arquivo já está na lista para evitar duplicatas
+        if nome_arquivo not in lista_arquivos:
+            lista_arquivos.append(nome_arquivo)
 
-        dados_log.update(novo_item)
         with open(arquivo_log, 'w', encoding='utf-8') as arq:
-            json.dump(dados_log, arq, indent=4)
-        print(f"💾 Progresso salvo no ìndice: {dados_log["indice"]}")
+            json.dump(lista_arquivos, arq, indent=4, ensure_ascii=False)
+        print("💾 Progresso salvo")
 
 
     # Carrega os dados do arquivo JSON que sereve como Cartão de Memória
-    def carrega_progresso(self, arquivo_log: str):
+    def carrega_progresso(self, arquivo_log: str) -> List[str]:
         """
             Carrega o progresso do arquivo JSON.
             :param arquivo_log: Endereço do arquivo JSON
-            :return: Um dicionário contendo os dados de progresso.
-                     Se o arquivo não existir, retorna valores padrão.
+            :return: Uma lista de nomes de arquivos. Se o arquivo não existir,
+             estiver vazio ou inválido, retorna uma lista vazia.
         """
-        with open(arquivo_log, 'r') as arq:
-            return json.load(arq)
+        if not os.path.exists(arquivo_log):
+            return []
 
-
-    # Reseta o arquivo JSON
-    def reset(self, arquivo_log: str):
-        """
-        Reseta o progresso atual em um arquivo JSON.
-        :param arquivo_log: Endereço do arquivo JSON
-        """
-        dados_vazios = {
-            "indice": 0
-        }
-        # Salva os dados vazios no arquivo JSON
-        with open(arquivo_log, 'w', encoding='utf-8') as arq:
-            json.dump(dados_vazios, arq, indent=4)
+        try:
+            with open(arquivo_log, 'r', encoding='utf-8') as arq:
+                dados = json.load(arq)
+                # Garante que o conteúdo seja uma lista
+                if isinstance(dados, list):
+                    return dados
+                else:
+                    return []
+        except (json.JSONDecodeError, FileNotFoundError):
+            # Retorna uma lista vazia em caso de erro na leitura do arquivo
+            return []
 
 
     # Corrige o número da proposta que vem na planilha
     def fix_prop_num(self,numero_proposta):
-        numero_proposta_fixed = numero_proposta.replace('_', '/')
+        if '_' in numero_proposta:
+            numero_proposta_fixed = numero_proposta.replace('_', '/')
+        else:
+            numero_proposta_fixed = numero_proposta
         return numero_proposta_fixed
 
 
@@ -536,26 +570,43 @@ class Robo:
             print(f"\n‼️ Erro fatal ao inserir PAD: {type(e).__name__}\nErro == {str(e)[:100]}")
             sys.exit("Parando o programa.")
 
+    def create_pad_file(self, dir_path: str) -> bool:
+        """
+        Creates a file named 'PAD Feito.txt' in the specified directory.
+
+        Args:
+            dir_path (str): The path to the directory where the file will be created.
+
+        Returns:
+            bool: True if file creation was successful, False otherwise.
+        """
+        try:
+            # Ensure the directory path ends with a separator
+            directory_path = os.path.normpath(dir_path, )
+
+            # Create full file path
+            file_path = os.path.join(directory_path, "PAD Feito.txt")
+
+            # Check if directory exists, create it if it doesn't
+            if not os.path.exists(directory_path):
+                os.makedirs(directory_path)
+
+            # Create or overwrite the file
+            with open(file_path, 'w') as f:
+                f.write("")
+            return True
+
+        except Exception as e:
+            print(f"Error creating file: {str(e)[:100]}")
+            return False
 
 def main() -> None:
-    # Caminho do arquivo .xlsx que contem os dados necessários para rodar o robô
-    caminho_arquivo_fonte = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
-                             r'Assistência Social\Teste001\ATT00001 (3) (1).xlsx')
     # Caminho do arquivo JSON que serve como catão de memória
     arquivo_log = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                   r'Social\Automações SNEAELIS\Analise_Custos_Exec_Print\source\arquivo_log.json')
-    # Referência para o código de natureza da despesa
-    cod_natureza_despesa = {
-        'servicos': '33903999',
-        'recursos_humanos': '33903999',
-        'material': '33903014',
-        'uniforme': '33903023',
-        'impressos': '33903063',
-        'premiacao': '33903004',
-        'hidratacao_alimentacao': '33903007',
-        'encargos_trab': '33903918',
-    }
-
+                   r'Social\Teste001\PAD\lista_exec_pad.json')
+    # Caminho do arquivo .xlsx que contem os dados necessários para rodar o robô
+    dir_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                r'Social\SNEAELIS - Robô PAD')
     try:
         # Instancia um objeto da classe Robo
         robo = Robo()
@@ -564,60 +615,84 @@ def main() -> None:
         print(f"\n‼️ Erro fatal ao iniciar o robô: {e}")
         sys.exit("Parando o programa.")
 
-    # DataFrame do arquivo excel
-    df = robo.extrair_dados_excel(caminho_arquivo_fonte=caminho_arquivo_fonte)
+    for root, dirs, files in os.walk(dir_path):
+        for filename in files:
+            if filename.endswith('.xlsx'):
+                lista_arq_exec = robo.carrega_progresso(arquivo_log)
+                if filename in lista_arq_exec:
+                    continue
+                caminho_arquivo_fonte = os.path.join(root, filename)
+                print(f"\nExecuting file: {filename}".center(50, '-'), '\n')
 
-    '''    # input para reset do arquivo JSON
-    reset = "s" # input('Deseja resetar o robô? s/n: ')
-    if reset.lower() == 's':
-        robo.reset(arquivo_log=arquivo_log)'''
+                # Referência para o código de natureza da despesa
+                cod_natureza_despesa = {
+                    'servicos': '33903999',
+                    'recursos_humanos': '33903999',
+                    'material': '33903014',
+                    'uniforme': '33903023',
+                    'impressos': '33903063',
+                    'premiacao': '33903004',
+                    'hidratacao_alimentacao': '33903007',
+                    'encargos_trab': '33903918',
+                    'material_esportivo': '33903014',
+                    'identidades/divulgações': '33903963',
+                    'identidades': '33903963',
+                    'divulgações': '33903963'
+                }
 
-    # inicia consulta e leva até a página de busca do processo
-    robo.consulta_proposta()
+                # DataFrame do arquivo excel
+                df = robo.extrair_dados_excel(caminho_arquivo_fonte=caminho_arquivo_fonte)
 
-    numero_processo_temp = df.iloc[1,1]
-    numero_processo = robo.fix_prop_num(numero_processo_temp)
+                # inicia consulta e leva até a página de busca do processo
+                robo.consulta_proposta()
 
-    cnpj_xlsx = df.loc[df[0] == 'CNPJ', 1].iloc[0]
+                numero_processo_temp = df.iloc[0,1]
+                numero_processo = robo.fix_prop_num(numero_processo_temp)
 
-    unique_values = []
-    unique_values_col_b = df[1].unique()
-    # first occurrence index
-    unique_idx = np.where(unique_values_col_b == 'TIPO')[0][0]
-    unique_values_temp = unique_values_col_b[unique_idx+1:]
-    for val in unique_values_temp:
-        val = val.lower()
-        if '/' in val:
-            val_spl = val.split('/')
-            for i in val_spl:
-                unique_values.append(i)
-        else:
-            unique_values.append(val.lower())
-    print(f"Unique values {unique_values}")
+                cnpj_xlsx = df.loc[df[0] == 'CNPJ:', 1].iloc[0]
 
-    for value in unique_values:
-        try:
-            grouped_df = df[df[1].str.lower().str.contains(value, na=False)]
-            print(f"Executing for {value}\n"
-                  f"Number of rows in grouped_df: {len(grouped_df)}")
-            if grouped_df.empty:
-                sys.exit()
-            robo.loop_de_pesquisa(df=grouped_df,
-                                  arquivo_log=arquivo_log,
-                                  numero_processo=numero_processo,
-                                  tipo_desp=value,
-                                  cod_natur_desp=robo.map_cod_natur_desp(cod_natureza_despesa, value),
-                                  cnpj_xlsx=cnpj_xlsx
-                                  )
-        except KeyboardInterrupt:
-            print("Script stopped by user (Ctrl+C). Exiting cleanly.")
-            sys.exit(0) # Exit gracefully
-        except Exception as e:
-            exc_type, exc_value, exc_tb = sys.exc_info()
-            print(f"Error occurred at line: {exc_tb.tb_lineno}")
-            print(f"❌ Falha ao executar script. Erro: {type(e).__name__}\n{str(e)[:100]}")
-            sys.exit(0)  # Exit gracefully
+                unique_values = []
+                unique_values_col_b = df[1].unique()
+                # first occurrence index
+                unique_idx = np.where(unique_values_col_b == 'TIPO')[0][0]
+                unique_values_temp = unique_values_col_b[unique_idx+1:]
+                for val in unique_values_temp:
+                    val = str(val).lower()
+                    unique_values.append(val)
 
+                for value in unique_values:
+                    try:
+                        if value == 'eventos' or value == 'alimentação':
+                            continue
+                        grouped_df = df[df[1].str.lower().str.contains(value, na=False)]
+
+                        print(f"Executing for {value}\n"
+                              f"Number of rows in grouped_df: {len(grouped_df)}"
+                              .center(50, '-'), '\n')
+
+                        if grouped_df.empty:
+                            continue
+                        robo.loop_de_pesquisa(df=grouped_df,
+                                              arquivo_log=arquivo_log,
+                                              numero_processo=numero_processo,
+                                              tipo_desp=value,
+                                              cod_natur_desp=robo.map_cod_natur_desp(
+                                                    dict_cod=cod_natureza_despesa,
+                                                    cod=value
+                                                    ),
+                                              cnpj_xlsx=cnpj_xlsx
+                                              )
+                    except KeyboardInterrupt:
+                        print("Script stopped by user (Ctrl+C). Exiting cleanly.")
+                        sys.exit(0) # Exit gracefully
+                    except Exception as e:
+                        exc_type, exc_value, exc_tb = sys.exc_info()
+                        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                        print(f"❌ Falha ao executar script. Erro: {type(e).__name__}\n{str(e)[:100]}")
+                        sys.exit(0)  # Exit gracefully
+
+                robo.salva_progresso(arquivo_log=arquivo_log, nome_arquivo=filename)
+                robo.create_pad_file(os.path.join(root))
 
 if __name__ == "__main__":
     start_time = time.time()

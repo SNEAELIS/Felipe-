@@ -214,11 +214,14 @@ def loop_segunda_pagina(driver, source_dir: str, num_parecer: str, codigo: str) 
         '/html/body/modal-container/div[2]/div/div[2]/div/form/div[2]/div/br-file/div/button',
 
         # [8] > Botão incluir [3]
-        '/html/body/modal-container/div[2]/div/div[3]/button[2]'
+        '/html/body/modal-container/div[2]/div/div[3]/button[2]',
+
+        # [9] > Botão incluir [3]
+        '//*[@id="btnSalvar"]'
     ]
 
 
-    texto_parecer = 'Parecer aprovado com ressalvas conforme anexo.'
+    texto_parecer = 'Parecer aprovado conforme anexo.'
     texto_desc_arq = 'Parecer MESP'
     texto_org = '308797 - Ministério do Esporte'
     texto_res_anlz = 'Aprovar Plano de Trabalho'
@@ -366,6 +369,10 @@ def anexar_parecer(driver, path_list: list, source_dir: str, texto_desc_arq: str
 
         # Inclui anexo
         clicar_elemento(driver, path_list[3])
+
+        # Salvar anexo
+        clicar_elemento(driver, path_list[4])
+
         return True
 
     except TimeoutException or NoSuchElementException or StaleElementReferenceException as erro:
@@ -411,17 +418,20 @@ def select_files_by_suffix(source_dir, num_parecer):
     If no file matches, returns None.
     """
     print('🔍 Searching for files...')
-    for filename in os.listdir(source_dir):
-        full_path = os.path.join(source_dir, filename)
-        # Skip directories
-        if not os.path.isfile(full_path):
-            continue
-        base = os.path.splitext(filename)[0]
-        parts = base.split('_')[-1]
-        sub_parts = parts.split('.')[0]
-        if sub_parts == num_parecer:
-            return full_path  # Return immediately on first match
-    return None
+    try:
+        for filename in os.listdir(source_dir):
+            full_path = os.path.join(source_dir, filename)
+            # Skip directories
+            if not os.path.isfile(full_path):
+                continue
+            base = os.path.splitext(filename)[0]
+            parts = base.split('_')[-1]
+            sub_parts = parts.split('.')[0]
+            if sub_parts == num_parecer:
+                return full_path  # Return immediately on first match
+    except Exception as erro:
+        print(f"❌ Erro fatal ao buscar anexo: {type(erro).__name__}\n{erro[:80]}")
+        return None
 
 
 # Função principal
@@ -435,7 +445,7 @@ def main():
                   r'Social\Teste001\Sofia\Pareceres_SEi')
 
     try:
-        df = pd.read_excel(planilha_final)
+        df = pd.read_excel(planilha_final, dtype=str)
         df.columns = [col.strip() for col in df.columns]
         print(f"✅ Planilha lida com {len(df)} linhas.")
 
@@ -459,7 +469,7 @@ def main():
                 print(f'📝⏭️ Proposta com parecer enviado. Pulando linha {index}...')
                 continue
             codigo = str(row["Código do Plano de Ação"])  # Garante que o código seja string
-            num_parecer = str(row["Parecer"])#.split('(')[0].strip()  # Garante que o código seja string
+            num_parecer = str(row["Parecer"]).strip()  # Garante que o código seja string
 
             print(f"\n⚙️ Processando código: {codigo} (índice: {index})\n")
 
@@ -547,7 +557,7 @@ def main():
                                        source_dir=source_dir,
                                        num_parecer=num_parecer,
                                        codigo=codigo):
-                    df.iloc[index, 2] = "Sim"  # Column index 2 is 'C'
+                    df.iloc[index, 3] = "Sim"  # Column index 2 is 'D'
                     df.to_excel(planilha_final, index=False)
                 # Sobe para o topo da página
                 driver.execute_script("window.scrollTo(0, 0);")
