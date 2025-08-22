@@ -360,28 +360,23 @@ def reset_browser(driver):
 
 
 # Função principal
-def main():
+def main(xlsx_path):
     driver = conectar_navegador_existente()
 
-    planilha_final = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
-                      r"Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise - "
-                      r"Copia.xlsx")
-
-    delete_rows = input(str('Do you want to delete filled rows?: Y/n\n'))
+    planilha_final = xlsx_path
 
     try:
-        if delete_rows == 'Y':
-            df = pd.read_excel(planilha_final)
-            try:
-                drop_rows = []
-                for i, r in df.iterrows():
-                    if pd.notna(r.iloc[2]):
-                        drop_rows.append(i)
-                df.drop(drop_rows, inplace=True)
-                df.to_excel(planilha_final, index=False, engine='openpyxl')
-                print(f"✅ Nº de dados removidos: {len(drop_rows)}\n")
-            except Exception as e:
-                print(f'{type(e).__name__}\n{e[:80]}')
+        df = pd.read_excel(planilha_final)
+        try:
+            drop_rows = []
+            for i, r in df.iterrows():
+                if pd.notna(r.iloc[2]):
+                    drop_rows.append(i)
+            df.drop(drop_rows, inplace=True)
+            df.to_excel(planilha_final, index=False, engine='openpyxl')
+            print(f"✅ Nº de dados removidos: {len(drop_rows)}\n")
+        except Exception as e:
+            print(f'{type(e).__name__}\n{e[:80]}')
 
         df = pd.read_excel(planilha_final)
         print(f"✅ Planilha lida com {len(df)} linhas.")
@@ -518,15 +513,9 @@ def main():
         print(f"❌ {last_error}")
         print(f'{type(erro).__name__}')
 
-def update_xlsx():
-    source_file =(
-        r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-        r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise - Copia.xlsx'
-        )
-    target_file =(
-        r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-        r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise - Copia - Copia.xlsx'
-        )
+def update_xlsx(src_file, tgt_file):
+    source_file = src_file
+    target_file = tgt_file
     # Read both spreadsheets into DataFrames
     df_source = pd.read_excel(source_file)
     df_target = pd.read_excel(target_file)
@@ -658,8 +647,26 @@ def send_emails_from_excel(excel_path,):
     prepare_outlook_email(email, subject, html_body)
 
 if __name__ == "__main__":
-    main()
-    update_xlsx()
-    send_emails_from_excel(r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise - Copia.xlsx')
+    #xlsx_path_2025
+    xlsx_paths = [(r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                      r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - '
+                   r'Copia.xlsx'),
+    #xlsx_path_2024
+     (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                      r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise - '
+                      r'Copia.xlsx')
+    ]
+    xlsx_paths_copy = [
+        #xlsx_path_2025
+        (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+        r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\
+        enviados_para_analise 2025 - Copia - Copia.xlsx'),
+        # xlsx_path_2024
+        (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+        r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise - Copia - Copia.xlsx')
+                  ]
+    for idx, path in enumerate(xlsx_paths):
+        main(path)
+        update_xlsx(path, xlsx_paths_copy[idx])
+        send_emails_from_excel(path)
 
