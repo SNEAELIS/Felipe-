@@ -517,8 +517,8 @@ def update_xlsx(src_file, tgt_file):
     source_file = src_file
     target_file = tgt_file
     # Read both spreadsheets into DataFrames
-    df_source = pd.read_excel(source_file)
-    df_target = pd.read_excel(target_file)
+    df_source = pd.read_excel(source_file, dtype=str)
+    df_target = pd.read_excel(target_file, dtype=str)
 
     # Ensure columns are aligned and both have the same columns for update
     column_to_update = df_source.columns
@@ -659,8 +659,8 @@ if __name__ == "__main__":
     xlsx_paths_copy = [
         #xlsx_path_2025
         (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-        r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\
-        enviados_para_analise 2025 - Copia - Copia.xlsx'),
+        r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - Copia - '
+         r'Copia.xlsx'),
         # xlsx_path_2024
         (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
         r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise - Copia - Copia.xlsx')
