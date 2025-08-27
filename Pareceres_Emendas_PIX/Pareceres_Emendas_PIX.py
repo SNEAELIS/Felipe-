@@ -64,7 +64,7 @@ def truncate_error(msg, max_error_length=100):
 
 
 # Função para clicar em um elemento com retry
-def clicar_elemento(driver, xpath, text: bool=True, retries=3):
+def clicar_elemento(driver, xpath, text: bool=True, retries=10):
     """Attempts to click an element with truncated error messages.
 
     Args:
@@ -216,8 +216,14 @@ def loop_segunda_pagina(driver, source_dir: str, num_parecer: str, codigo: str) 
         # [8] > Botão incluir [3]
         '/html/body/modal-container/div[2]/div/div[3]/button[2]',
 
-        # [9] > Botão incluir [3]
-        '//*[@id="btnSalvar"]'
+        # [9] > Botão incluir [4]
+        '//*[@id="btnSalvar"]',
+
+        # [10] > Botão Concluir análise [5]
+        '//*[@id="btnConcluir"]',
+
+        # [11] > Botão Finaliza análise [6]
+        '/html/body/modal-container/div[2]/div/div[3]/button[2]'
     ]
 
 
@@ -373,6 +379,10 @@ def anexar_parecer(driver, path_list: list, source_dir: str, texto_desc_arq: str
         # Salvar anexo
         clicar_elemento(driver, path_list[4])
 
+        # Conclui análise
+        clicar_elemento(driver, path_list[5])
+        clicar_elemento(driver, path_list[6])
+
         return True
 
     except TimeoutException or NoSuchElementException or StaleElementReferenceException as erro:
@@ -420,15 +430,16 @@ def select_files_by_suffix(source_dir, num_parecer):
     print('🔍 Searching for files...')
     try:
         for filename in os.listdir(source_dir):
-            full_path = os.path.join(source_dir, filename)
-            # Skip directories
-            if not os.path.isfile(full_path):
-                continue
-            base = os.path.splitext(filename)[0]
-            parts = base.split('_')[-1]
-            sub_parts = parts.split('.')[0]
-            if sub_parts == num_parecer:
-                return full_path  # Return immediately on first match
+            if filename.endswith('.pdf'):
+                full_path = os.path.join(source_dir, filename)
+                # Skip directories
+                if not os.path.isfile(full_path):
+                    continue
+                base = os.path.splitext(filename)[0]
+                parts = base.split('_')[0]
+                sub_parts = parts.split('-')[-1]
+                if sub_parts == num_parecer:
+                    return full_path  # Return immediately on first match
     except Exception as erro:
         print(f"❌ Erro fatal ao buscar anexo: {type(erro).__name__}\n{erro[:80]}")
         return None

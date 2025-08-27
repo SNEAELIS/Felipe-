@@ -368,12 +368,12 @@ class Robo:
                     self.webdriver_element_wait(lista_campos[1]).send_keys(cod_natur_desp)
 
                     # Unidade Fornecimento
-                    un_fornecimento = str(row.iloc[8])
+                    un_fornecimento = str(row.iloc[8]).strip().lower()
                     if un_fornecimento == 'mensal':
                         un_fornecimento = 'MÊS'
                     elif un_fornecimento == 'unidade':
                         un_fornecimento = 'UN'
-                    elif un_fornecimento == 'diaria' or un_fornecimento == 'Diária':
+                    elif un_fornecimento == 'diaria' or un_fornecimento == 'diária':
                         un_fornecimento = 'DIA'
                     self.webdriver_element_wait(lista_campos[2]).send_keys(un_fornecimento)
 
@@ -386,7 +386,7 @@ class Robo:
                         self.webdriver_element_wait(lista_campos[3]).send_keys(valor_total)
 
                     # Quantidade
-                    qtd = str(row.iloc[7])+"00"
+                    qtd = str(row.iloc[9])+"00"
                     self.webdriver_element_wait(lista_campos[4]).send_keys(qtd)
 
                     # Endereço de Localização
