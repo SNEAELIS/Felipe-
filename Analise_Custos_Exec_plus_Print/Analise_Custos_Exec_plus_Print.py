@@ -53,12 +53,13 @@ class Robo:
             self.driver = None
 
     # Chama a função do webdriver com wait element to be clickable
-    def webdriver_element_wait(self, xpath: str):
+    def webdriver_element_wait(self, xpath: str, num_element: int = 1):
         """
                 Espera até que um elemento web esteja clicável, usando um tempo limite máximo de 3 segundos.
 
                 Args:
                     xpath: O seletor XPath do elemento.
+                    num_element: Identificador do npúmero de elementos que se espera serem retornados
 
                 Returns:
                     O elemento web clicável, ou lança uma exceção TimeoutException se o tempo limite for atingido.
@@ -67,8 +68,12 @@ class Robo:
                     TimeoutException: Se o elemento não estiver clicável dentro do tempo limite.
                 """
         # Cria uma instância de WebDriverWait com o driver e o tempo limite e espera o elemento ser clicável
-        return WebDriverWait(self.driver, 3).until(EC.element_to_be_clickable((By.XPATH, xpath)))
-
+        if num_element == 1:
+            return WebDriverWait(self.driver, 3).until(EC.element_to_be_clickable((By.XPATH, xpath)))
+        else:
+            return WebDriverWait(self.driver, 3).until(
+                lambda driver: [elem for elem in driver.find_elements(By.XPATH, xpath)]
+            )
     # Navega até a página de busca do instrumento ou proposta
     def consulta_instrumento(self):
         """
@@ -79,7 +84,8 @@ class Robo:
                """
         # Reseta para página inicial
         try:
-            reset = self.webdriver_element_wait('//*[@id="header"]')
+            reset = WebDriverWait(self.driver,3).until(EC.element_to_be_clickable(
+                (By.XPATH, '//*[@id="header"]')))
             if reset:
                 img = reset.find_element(By.XPATH, '//*[@id="logo"]/a/img')
                 action = ActionChains(self.driver)
@@ -87,7 +93,9 @@ class Robo:
                 reset.find_element(By.TAG_NAME, 'a').click()
                 print(Fore.MAGENTA + "\n✅ Processo resetado com sucesso !")
         except Exception as e:
-            print(Fore.RED + f'🔄❌ Falha ao resetar.\nErro: {type(e).__name__}\n{str(e)[:50]}')
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}")
+            print(Fore.RED + f'🔄❌ Falha ao resetar.\nErro: {type(e).__name__}\n{str(e)[:100]}')
 
         # [0] Excução; [1] Consultar Pré-Instrumento/Instrumento
         xpaths = ['//*[@id="menuPrincipal"]/div[1]/div[4]',
@@ -96,9 +104,12 @@ class Robo:
         try:
             for idx in range(len(xpaths)):
                 self.webdriver_element_wait(xpaths[idx]).click()
-            print(f"{Fore.MAGENTA}✅ Sucesso em acessar a página de busca de processo{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}✅ Sucesso em acessar a página de busca de processo{Style.RESET_ALL}")
         except Exception as e:
-            print(Fore.RED + f'🔴📄 Instrumento indisponível. \nErro: {e}')
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
+            print(Fore.RED + f'🔴📄 Instrumento indisponível. \nErro: {e}{Style.RESET_ALL}')
             sys.exit(1)
 
     def campo_pesquisa(self, numero_processo):
@@ -114,6 +125,9 @@ class Robo:
                                                       '3]/table/tbody/tr/td/div/a')
             acessa_item.click()
         except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
             print(f' Falha ao inserir número de processo no campo de pesquisa. Erro: {type(e).__name__}')
 
     def busca_convenio(self):
@@ -128,7 +142,7 @@ class Robo:
                                                            '/div[1]/div[2]/a[9]/div[1]/span[1]/span[1]')
         aba_termo_referencia.click()
 
-    def busca_propostas(self):
+    def acessa_anexos(self):
         try:
             # Executa pesquisa de anexos
             print('🔁📎 Executando pesquisa de anexos')
@@ -140,13 +154,15 @@ class Robo:
             self.webdriver_element_wait('//*[@id="menu_link_997366806_1965609892"]/div').click()
 
         except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
             print(f"Ocorreu um erro ao executar ao pesquisar anexos: {type(e).__name__}"
                   f".\n Erro {e[:50]}")
 
     # Pesquisa o termo de fomento listado na planilha e executa download e transferência caso exista algúm.
-    def loop_de_pesquisa(self, numero_processo: str, caminho_pasta: str, pasta_download: str,
-                          feriado: int, err: list=None,
-                         pg: int=0, anexos: bool=True):
+    def loop_de_pesquisa(self, numero_processo: str, caminho_pasta: str, pasta_download: str, err: list=None,
+                         pg: int=0):
         """
             Executa as etapas de pesquisa para um número de processo específico.
 
@@ -244,13 +260,16 @@ class Robo:
                         if file.is_file():
                             file.unlink()  # Deleta arquivo
                     except Exception as e:
-                        print(f"⚠️ Erro ao deletar {file}: {e}")
+                        exc_type, exc_value, exc_tb = sys.exc_info()
+                        print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
+                        print(f"⚠️ Erro ao deletar {file}: {str(e)[:100]}")
 
             print(f"✅ Arquivo ZIP criado em: {zip_path}")
             return str(zip_path)
 
         # Baixa os PDF's da tabela HTML
-        def baixa_pdf_exec():
+        def baixa_pdf_exec(pg):
             """
                     Baixa os arquivos PDF presentes em uma tabela HTML.
 
@@ -270,9 +289,8 @@ class Robo:
 
                 print(f'💾📁 Baixando os arquivos do processo {numero_processo}.')
 
-                try:
-                    for pagina in range(1, paginas + 1):
-                        int(pagina)
+                for pagina in range(1, paginas + 1):
+                    try:
                         if pg > pagina:
                             print('🌀📄 pulando página')
                             continue
@@ -284,7 +302,8 @@ class Robo:
                         # Check if the last page was the tenth page, this site has a max of 10 pages /block
                         if pagina > 1:
                             if (pagina - 1) % 10 == 0:
-                                self.driver.find_element(By.XPATH, '//*[@id="listaAnexos"]/span[2]/a[10]').click()
+                                self.driver.find_element(By.XPATH,
+                                                         '//*[@id="listaAnexos"]/span[2]/a[10]').click()
 
                             elif (pagina - 1) % 10 != 0:
                                 self.driver.find_element(By.LINK_TEXT, f'{pagina}').click()
@@ -300,7 +319,6 @@ class Robo:
                                 if indice <= err[pagina - 1][-1]:
                                     print(f'⏭️ pulando linha: {indice}')
                                     continue
-
                             try:
                                 botao_download = linha.find_element(By.CLASS_NAME, 'buttonLink')
                                 if botao_download:
@@ -308,56 +326,82 @@ class Robo:
                             except StaleElementReferenceException:
                                 try:
                                     linha_erro = indice - 1
-                                    print(f"⚠️ StaleElementReferenceException occurred at line: {linha_erro}")
                                     if linha_erro >= 0 and linha_erro not in err[pagina - 1]:
                                         err[pagina-1].append(linha_erro)
-                                        print(err[pagina - 1])
+                                    print(f"⚠️ StaleElementReferenceException occurred at line: {indice}"
+                                          f"::::::{print(err[pagina - 1])}")
+
                                     self.driver.back()
                                     self.consulta_instrumento()
                                     self.loop_de_pesquisa(numero_processo=numero_processo,
                                                           caminho_pasta=caminho_pasta,
                                                           pasta_download=pasta_download,
-                                                          feriado=feriado,
                                                           err=err,
                                                           pg=pagina,
-                                                          anexos=anexos
                                                           )
                                 except Exception as error:
+                                    exc_type, exc_value, exc_tb = sys.exc_info()
+                                    print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}"
+                                                     f"{Style.RESET_ALL}")
+
                                     error_trace = traceback.format_exc()
                                     print(f'❌ Erro ao pular linha com falha. Erro:'
                                           f' {type(error).__name__}\nTraceback:\n{error_trace}')
                             except Exception as error:
+                                exc_type, exc_value, exc_tb = sys.exc_info()
+                                print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}"
+                                                 f"{Style.RESET_ALL}")
+
                                 print(f"❌ Erro ao processar a linha nº{indice} de termo, erro: {type(error).__name__}")
                                 continue
-                except Exception as error:
-                    print(f"❌ Erro ao buscar nova página em anexos execução: {error}. Err:"
-                          f" {type(error).__name__}")
+                    except Exception as error:
+                        exc_type, exc_value, exc_tb = sys.exc_info()
+                        print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
+                        print(f"❌ Erro ao buscar nova página em anexos execução: {error}. Err:"
+                              f" {type(error).__name__}")
 
             except Exception as error:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
                 print(f'❌ Erro de download: Termo {error}. Err: {type(error).__name__}')
 
         self.campo_pesquisa(numero_processo=numero_processo)
 
         try:
-            # Executa pesquisa de anexos
-            self.busca_propostas()
+            self.acessa_anexos()
 
             # Seleciona lista de anexos execução e manda baixar os arquivos
             try:
                 if not err:
                     err = [[]]
                     pg = 0
+
                 print('\n🔁📎 Executando pesquisa de anexos execução')
 
-                time.sleep(1)
+                time.sleep(0.3)
                 botao_lista_execucao = self.webdriver_element_wait('//tbody//tr//input[2]')
 
                 if botao_lista_execucao.is_displayed() or botao_lista_execucao.is_enabled():
-                    self.lista_execucao()
-                    # Verifica se a tabela existe na página anexos execução.
                     try:
-                        baixa_pdf_exec()
+                        # Seleciona lista de anexos execução e acessa a mesma
+                        botao_lista_execucao.click()
+                    except TimeoutException:
+                        print(f"Timeout waiting for element: {'//tbody//tr//input[2]'}")
+                    except Exception as e:  # Catch other potential exceptions
+                        exc_type, exc_value, exc_tb = sys.exc_info()
+                        print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
+                        print(f"🤷‍♂️❌ Erro ao tentar entar na lista de anexos execução: {e}")
+
+                    # Baixa os anexos da tabela.
+                    try:
+                        baixa_pdf_exec(pg)
                     except Exception as e:
+                        exc_type, exc_value, exc_tb = sys.exc_info()
+                        print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
                         print(f"❌ Tabela não encontrada.\nErro: {e}")
                 else:
                     # Volta para a aba de consulta (começo do loop) caso não tenha lista de execução
@@ -374,15 +418,10 @@ class Robo:
                     f"\n{Fore.GREEN}✅ Loop de pesquisa concluído para o processo:"
                     f" {numero_processo}{Style.RESET_ALL}\n")
 
-            except StaleElementReferenceException:
-                try:
-                    for _ in range(3):
-                        self.driver.find_element(By.XPATH, '/html/body/div[3]/div[14]/div[3]/div[1]'
-                                                   '/div/form/table/tbody/tr/td[2]/input[2]').click()
-                        time.sleep(0.33)
-                except Exception:
-                    raise Exception("Stopping script execution due to an error.")
             except Exception as er:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
                 print(f'❌ Falha ao acessar documentos de execução.'
                       f'\nErro:{type(er).__name__}, {str(er)[:50]}')
                 self.consulta_instrumento()
@@ -391,6 +430,9 @@ class Robo:
             print(f'TIMEOUT {t[:50]}')
             self.consulta_instrumento()
         except Exception as erro:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
             print(f'❌ Falha ao acessar documentos de execução. Erro:{type(erro).__name__}\n{str(erro)[:50]}')
             self.consulta_instrumento()
 
@@ -509,6 +551,7 @@ class Robo:
 
 
                 except Exception as er:
+
                     print(f'Attempt {attempts + 1} failed: {str(er)[:80]}')
                     attempts += 1
                     time.sleep(2)  # Wait before retry
@@ -557,8 +600,12 @@ class Robo:
                     raise FileNotFoundError("No PDF files found in downloads")
                 newest_pdf = max(pdf_files, key=os.path.getctime)
             except Exception as e:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
                 print(
-                    f"❌ [File Search Error] Could not find or select PDF file: {type(e).__name__}: {str(e)[:50]}")
+                    f"❌ [File Search Error] Could not find or select PDF file: {type(e).__name__}:\n"
+                    f"{str(e)[:100]}")
                 return
 
             try:
@@ -584,8 +631,12 @@ class Robo:
                 os.replace(temp_pdf, newest_pdf)
                 print(f"✅ PDF '{newest_pdf.name}' foi cortado com sucesso (arquivo substituído).")
             except Exception as e:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
                 print(
-                    f"❌ [PDF Processing Error] Error during PDF cropping: {type(e).__name__}: {str(e)[:50]}")
+                    f"❌ [PDF Processing Error] Error during PDF cropping: {type(e)[:100].__name__}: "
+                    f"{str(e)[:100]}")
                 return
 
         # Main execution
@@ -600,6 +651,37 @@ class Robo:
 
     # Salva a tela de esclarecimento detalhado.
     def loop_esclarecimento(self, pasta_download: str, caminho_pasta: str, numero_processo: str):
+        def baixa_respostas():
+                print(f'💾📁 Baixando os arquivos do processo {numero_processo}.')
+                try:
+                    # Encontra a tabela na página atual
+                    tabela_resp = self.driver.find_element(
+                        By.XPATH, '/html/body/div[3]/div[14]/div[3]/div/div/form/table/tbody/tr[18]/td/div')
+                    # Encontra todas as linhas da tabela atual
+                    linhas_resp = tabela_resp.find_elements(By.XPATH, './/tbody/tr')
+
+                    # Itera as linhas da tabela
+                    for idx, linha_r in enumerate(linhas_resp):
+                        try:
+                            botao_download = linha_r.find_element(By.CLASS_NAME, 'buttonLink')
+                            if botao_download:
+                                botao_download.click()
+                        except NoSuchElementException:
+                            continue
+                        except Exception as err:
+                            exc_type, exc_value, exc_tb = sys.exc_info()
+                            print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
+                            print(
+                                f"❌ Erro ao processar a linha nº{idx} de termo,"
+                                f" erro: {type(err).__name__}")
+                            continue
+                except Exception as err:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
+                    print(f'❌ Erro de download: Termo {str(err)[:100]}. Err: {type(err).__name__}')
+
         # Xpath [0] Acomp. e Fiscalização // [1] Esclarecimento
         loop_list = ['//*[@id="menuInterno"]/div/div[7]',
                      '//*[@id="contentMenuInterno"]/div/div[1]/ul/li[3]/a']
@@ -644,6 +726,9 @@ class Robo:
                                     EC.presence_of_element_located((By.ID, 'esclarecimentos')))
                                 linhas = tabela.find_elements(By.TAG_NAME, 'tr')
                         except Exception as error:
+                            exc_type, exc_value, exc_tb = sys.exc_info()
+                            print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
                             print(
                                 f"❌ Erro ao processar a linha nº{indice},"
                                 f" erro: {type(error).__name__}\n{str(error)[:80]}")
@@ -667,6 +752,9 @@ class Robo:
                             botao_detalhar = linha.find_element(By.CLASS_NAME, 'buttonLink')
                             botao_detalhar.click()
 
+                            # Baixa arquivos da lista de respostas
+                            baixa_respostas()
+
                             # Print page and handle subsequent actions
                             self.print_page(pasta_download=pasta_download, pdf_path=unique_pdf_path,)
 
@@ -676,21 +764,31 @@ class Robo:
                             pyautogui.hotkey('alt', 'left')
 
                         except Exception as error:
+                            exc_type, exc_value, exc_tb = sys.exc_info()
+                            print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
                             print(
                                 f'❌ Erro ao imprimir a página. Erro: {type(error).__name__}\n'
                                 f'Traceback:\n{str(error)[:50]}')
             except Exception as error:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
                 print(f"❌ Erro ao buscar nova página de esclarecimento: {error}.\nErr:"
                       f" {type(error).__name__}")
-            self.consulta_instrumento()
         except Exception as error:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
             print(f"❌ Erro ao econtrar elementos na página de esclarecimentos: {error}. Err:"
                   f" {type(error).__name__}")
 
         self.espera_completar_download(pasta_download=pasta_download)
         self.transfere_arquivos(caminho_pasta, pasta_download)
+        self.consulta_instrumento()
+
         print(
-            f"\n{Fore.GREEN}✅ Loop de pesquisa concluído para o processo:"
+            f"\n{Fore.GREEN}✅ Loop de esclarecimento concluído para o processo:"
             f" {numero_processo}{Style.RESET_ALL}\n")
 
     # Make sure the name of the document is unique
@@ -728,7 +826,10 @@ class Robo:
                 print(f'Botão localizado com o seletor {locator[0]}')
                 return self.driver.find_element(*locator)
             except Exception as e:
-                print(f"Falha com localizador {locator}: {str(e)[:80]}")
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
+                print(f"Falha com localizador {locator}: {str(e)[:100]}")
                 continue
 
         raise NoSuchElementException("Could not find button using any locator strategy")
@@ -805,45 +906,6 @@ class Robo:
             paginas = 1
             return paginas
 
-    # Pega a data do documento e o nome da aba
-    def compara_data(self, data_site: str, feriado: int, no_comp: bool = True) -> bool:
-        """
-        Compara a data fornecida com a data de ontem.
-
-        Args:
-            data_site: Data a ser comparada, no formato 'AAAA-MM-DD' ou 'AAAA-MM-DD HH:MM:SS'.
-            feriado: Quantidade de dias a serem descontadas para pegar os dias que o robo não rodou
-            no_comp: Indica se usará comparação de data ou não
-
-        Returns:
-            True se a data fornecida for anterior à data de ontem, False caso contrário.
-            Retorna False se o formato da data fornecida for inválido.
-        """
-        # Obtém a data de ontem
-        try:
-            if no_comp:
-                return True
-            # Converte a data do site para datetime, tratando diferentes formatos
-            data_site_dt = self.converter_data(data_site)
-            if data_site_dt is None:
-                return False  # Formato de data inválido
-            if datetime.isoweekday(datetime.today()) == 1:
-                data_ontem = datetime.now() - timedelta(days=2 + feriado)
-            else:
-                data_ontem = datetime.now() - timedelta(days=feriado)
-
-            # Comparação
-            if data_site_dt >= data_ontem:
-                print(data_site_dt)
-                print(data_ontem)
-                return True
-            else:
-                return False
-
-        except Exception:
-            print(f"❌ Erro na comparação de datas")
-            return False
-
     def converter_data(self, data: str) -> datetime | None:
         """
         Função auxiliar para converter uma string de data em um objeto datetime,
@@ -870,27 +932,6 @@ class Robo:
 
         print(f"⚠️📆 Formato de data inválido: {data}")
         return None
-
-    # Acessa a lista de anexos execução
-    def lista_execucao(self) -> None:
-        """
-               Acessa a lista de anexos da execução.
-
-               Esta função clica no botão para exibir a lista de anexos da execução
-               e define o nome da coluna que contém as datas dos anexos.
-
-               Returns:
-                   None
-               """
-        try:
-            # Seleciona lista de anexos execução e acessa a mesma
-            lista_anexos_execucao = self.webdriver_element_wait('//tbody//tr//input[2]')
-            lista_anexos_execucao.click()
-            # Define o nome da coluna de data
-        except TimeoutException:
-            print(f"Timeout waiting for element: {'//tbody//tr//input[2]'}")
-        except Exception as e:  # Catch other potential exceptions
-            print(f"🤷‍♂️❌ Erro ao tentar entar na lista de anexos execução: {e}")
 
     def data_hoje(self):
         # pega a data do dia que está executando o programa
@@ -1005,6 +1046,9 @@ class Robo:
                         shutil.move(caminho_arq, os.path.join(caminho_pasta, arq))
                         moved_files += 1
             except Exception as e:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
                 print(f'❌ Falha ao mover arquivo {e}')
 
         print(f'📂 Total de arquivos movidos: {moved_files}')
@@ -1032,15 +1076,18 @@ class Robo:
 
         try:
             # Cria o diretório, incluindo o diretório pai, se necessário.
-            exist_ok = True  # evita erro se a pasta já existir.
             os.makedirs(caminho_pasta, exist_ok=True)
             print(f"✅ Pasta '{nome_pasta}' criada em: {caminho_pasta}\n")
         except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
             print(f"❌ Erro ao criar a pasta '{nome_pasta}': {e}")
         # Retorna o caminho completo da pasta, mesmo que a criação tenha falhado (para tratamento posterior)
         return caminho_pasta
 
-    def extrair_dados_excel(self, caminho_arquivo_fonte, busca_id: str, tipo_instrumento_id: str):
+    def extrair_dados_excel(self, caminho_arquivo_fonte, busca_id: str, tipo_instrumento_id: str,
+                            situacional_id: str) -> tuple:
         """
            Lê os contatos de uma planilha Excel e executa ações baseadas nos dados extraídos.
 
@@ -1049,24 +1096,31 @@ class Robo:
                busca_id (str): Nome da coluna que contém os números de processo.
                tipo_instrumento_id (str): Nome da coluna que contém o tipo de processo.
            """
+
         pd.set_option('future.no_silent_downcasting', True)
         dados_processo = pd.read_excel(caminho_arquivo_fonte, dtype=str)
+        dados_processo = dados_processo.fillna('')
         dados_processo = dados_processo.replace({u'\xa0': ''})
         dados_processo = dados_processo.infer_objects(copy=False)
 
         # Cria um lista para cada coluna do arquivo xlsx
         numero_processo = list()
         tipo_instrumento = list()
+        situacional = list()
 
         try:
             # Itera a planilha e armazena os dados em listas
             for indice, linha in dados_processo.iterrows():  # Assume que a primeira linha e um cabeçalho
                 numero_processo.append(linha[busca_id])  # Busca o número do processo
                 tipo_instrumento.append(linha[tipo_instrumento_id])  # Busca o tipo de instrumento
+                situacional.append(linha[situacional_id]) # Busca a situação do processo
         except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
             print(f"❌ Erro de leitura encontrado, erro: {e}")
 
-        return numero_processo, tipo_instrumento
+        return numero_processo, tipo_instrumento, situacional
 
     # Verifica se a pasta está vazia
     def pasta_vazia(self, pasta_pai: str) -> list:
@@ -1199,14 +1253,17 @@ class Robo:
                 return numero_processo, caminho_pasta, docs_atuais
 
             else:
+
                 print(f"⚠️Nenhum documento novo encontrado para o processo {numero_processo}.\n")
                 return []
         except Exception:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print(f"⚠️Nenhum documento novo encontrado para o processo {numero_processo}.\n")
             return []
 
 
-def main(feriado=2) -> None:
+def main() -> None:
     def eta():
         idx = indice + 1
         elapsed_time = time.time() - start_time
@@ -1233,7 +1290,8 @@ def main(feriado=2) -> None:
     # Caminho do arquivo .xlsx que contem os dados necessários para rodar o robô
     caminho_arquivo_fonte = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
                              r'Assistência Social\Automações SNEAELIS\Analise_Custos_Exec_Print\source'
-                             r'\RTMA Passivo 2024 - PROJETOS E PROGRAMAS 1.xlsx')
+                             r'\RTMA Passivo 2024 - PROJETOS E PROGRAMAS (3) Atualizado em Julho '
+                             r'de.2025.xlsx')
     # Rota da pasta onde os arquivos baixados serão alocados, cada processo terá uma subpasta dentro desta
     caminho_pasta_onedrive = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
                               r'Assistência Social\Automações SNEAELIS\Analise_Custos_Exec_Print')
@@ -1246,13 +1304,17 @@ def main(feriado=2) -> None:
         robo = Robo()
         # Extrai dados de colunas específicas do Excel
     except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
         print(f"\n‼️ Erro fatal ao iniciar o robô: {e}")
         sys.exit("Parando o programa.")
 
-    numero_processo, tipo_instrumento = robo.extrair_dados_excel(
+    numero_processo, tipo_instrumento, situacional = robo.extrair_dados_excel(
         caminho_arquivo_fonte=caminho_arquivo_fonte,
         busca_id='Instrumento nº',
-        tipo_instrumento_id='Regime Jurídico do Instrumento (Modalidade)'
+        tipo_instrumento_id='Regime Jurídico do Instrumento (Modalidade)',
+        situacional_id='SITUACIONAL'
         )
 
     max_linha = len(numero_processo)
@@ -1263,7 +1325,7 @@ def main(feriado=2) -> None:
 
 
     # input para reset do arquivo JSON
-    reset = input('Deseja resetar o robô? s/n: ')
+    reset = 'n'#input('Deseja resetar o robô? s/n: ')
     if reset.lower() == 's':
         robo.reset(arquivo_log=arquivo_log)
 
@@ -1278,6 +1340,8 @@ def main(feriado=2) -> None:
 
     for indice in range(inicio_range, max_linha):
         eta()
+        if situacional[indice] != '':
+            continue
         try:
             # Cria pasta com número do processo
             caminho_pasta = robo.criar_pasta(nome_pasta=numero_processo[indice],
@@ -1289,7 +1353,6 @@ def main(feriado=2) -> None:
                 numero_processo=numero_processo[indice],
                 caminho_pasta=caminho_pasta,
                 pasta_download=pasta_download,
-                feriado=feriado
             )
             try:
                 robo.loop_esclarecimento(pasta_download=pasta_download,
@@ -1297,6 +1360,9 @@ def main(feriado=2) -> None:
                                          numero_processo=numero_processo[indice]
                                          )
             except Exception as e:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
                 print(f"\n❌ Erro ao processar esclarecimento no {indice}: ({numero_processo[indice]}).\n"
                       f" {e[:50]}")
 
@@ -1307,9 +1373,11 @@ def main(feriado=2) -> None:
                 robo.salva_progresso(arquivo_log,numero_processo[indice], confirma_email[2], indice=indice)
 
         except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
             print(f"\n❌ Erro ao processar o índice {indice} ({numero_processo[indice]}): {e}")
             robo.consulta_instrumento()
-            # Você pode salvar o erro em log aqui, se quiser
             continue  # Continua para o próximo processo
 
 
@@ -1341,6 +1409,9 @@ def hash_file(file_path, block_size=65536):
                 sha256.update(block)
         return sha256.hexdigest()
     except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
         print(f"⚠️ Erro ao calcular hash de {file_path}: {e}")
         return None
 
@@ -1370,6 +1441,9 @@ def delete_duplicate_files(directory, recursive=False):
                     deleted_files.append(full_path)
                     print(f"🗑️ Duplicado removido: {full_path}")
                 except Exception as e:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
                     print(f"❌ Erro ao deletar {full_path}: {e}")
             else:
                 seen_hashes[file_hash] = full_path
@@ -1379,6 +1453,8 @@ def delete_duplicate_files(directory, recursive=False):
 
     print(f"\n✅ Concluído. {len(deleted_files)} arquivos duplicados deletados.")
     return deleted_files
+
+
 if __name__ == "__main__":
     start_time = time.time()
 
