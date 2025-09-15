@@ -33,23 +33,34 @@ class Robo:
         Inicializa o objeto Robo, configurando e iniciando o driver do Chrome.
         """
         try:
-            # Configuração do registro
-            # self.arquivo_registro = ''
-            # Inicia as opções do Chrome
+            # Set up Chrome options
             self.chrome_options = webdriver.ChromeOptions()
-            # Endereço de depuração para conexão com o Chrome
-            self.chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
-            # Inicializa o driver do Chrome com as opções e o gerenciador de drivers
-            self.driver = webdriver.Chrome(
-                service=Service(ChromeDriverManager().install()),
-                options=self.chrome_options)
+
+            # Use a relative path for the user data directory to be portable
+            user_data_dir = os.path.join(os.getcwd(), "chrome_profile")
+            self.chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+
+            # Set a remote debugging port for potential debugging if needed
+            self.chrome_options.add_argument("--remote-debugging-port=9222")
+
+            # Specify the path to the chromedriver.exe, which should be included with your executable
+            # The path will be relative to the directory where the .exe is
+            # 'chromedriver.exe' will be in the same folder as the .exe after building
+            driver_path = os.path.join(os.getcwd(), 'chromedriver.exe')
+
+            # Initialize the Chrome service with the specific driver path
+            chrome_service = Service(executable_path=driver_path)
+
+            # Initialize the Chrome driver with the service and options
+            self.driver = webdriver.Chrome(service=chrome_service, options=self.chrome_options)
+
+            # This is optional, but helps ensure the window is active
             self.driver.switch_to.window(self.driver.window_handles[0])
 
-            print("✅ Conectado ao navegador existente com sucesso.")
+            print("✅ Chrome driver initialized and new session started.")
+
         except WebDriverException as e:
-            # Imprime mensagem de erro se a conexão falhar
-            print(f"❌ Erro ao conectar ao navegador existente: {e}")
-            # Define o driver como None em caso de falha na conexão
+            print(f"❌ Error initializing Chrome driver: {e}")
             self.driver = None
 
     # Chama a função do webdriver com wait element to be clickable
@@ -326,6 +337,7 @@ class Robo:
                             try:
                                 botao_download = linha.find_element(By.CLASS_NAME, 'buttonLink')
                                 if botao_download:
+                                    print(f'🖱️ Clicking to download {indice}')
                                     botao_download.click()
                             except StaleElementReferenceException:
                                 try:
@@ -503,7 +515,7 @@ class Robo:
            """
         driver = self.driver
         # Salva a tela do navegar com PDF
-        def save_chrome_screen_as_pdf(max_attempts=3, print_delay=2, save_delay=10):
+        def save_chrome_screen_as_pdf(max_attempts=3, print_delay=2, save_delay=3):
             """
             Automatiza o processo de impressão da aba atual do Chrome para PDF.
             Pressupõe que o Chrome está em foco e que 'Salvar como PDF' é a opção padrão no diálogo de impressão.
@@ -521,6 +533,11 @@ class Robo:
             attempts = 0
             while attempts < max_attempts:
                 try:
+                    # Ensure Chrome is the active window
+                    chrome_window = pyautogui.getWindowsWithTitle("Chrome")
+                    if chrome_window:
+                        chrome_window[0].activate()
+
                     WebDriverWait(driver, timeout=10).until(EC.presence_of_element_located((
                         By.XPATH, '//*[@id="form_submit"]')))
 
@@ -654,12 +671,11 @@ class Robo:
     # Salva a tela de esclarecimento detalhado.
     def loop_esclarecimento(self, pasta_download: str, caminho_pasta: str, numero_processo: str):
         def baixa_respostas():
-                print(f'💾📁 Baixando os esclarecimentos do processo: {numero_processo}.')
+                print(f'💾📁 Baixando os arquivos do processo {numero_processo}.')
                 try:
                     # Encontra a tabela na página atual
                     tabela_resp = self.driver.find_element(
-                        By.XPATH, '/html/body/div[3]/div[14]/div[3]/div/div/form/table/tbody/tr[18]/td/div['
-                                  '1]')
+                        By.XPATH, '/html/body/div[3]/div[14]/div[3]/div/div/form/table/tbody/tr[18]/td/div')
                     # Encontra todas as linhas da tabela atual
                     linhas_resp = tabela_resp.find_elements(By.XPATH, './/tbody/tr')
 
@@ -669,7 +685,6 @@ class Robo:
                             botao_download = linha_r.find_element(By.CLASS_NAME, 'buttonLink')
                             if botao_download:
                                 botao_download.click()
-                                time.sleep(0.6)
                         except NoSuchElementException:
                             continue
                         except Exception as err:
@@ -698,7 +713,7 @@ class Robo:
         print(f'🖨️🖼️ Imprimindo tela do processo {numero_processo}.')
 
         try:
-            # Encontra a tabela de lista de esclarecimento
+            # Encontra a tabela de anexos
             tabela = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.ID, 'esclarecimentos')))
 
@@ -839,7 +854,7 @@ class Robo:
         raise NoSuchElementException("Could not find button using any locator strategy")
 
     # Pega o ultimo arquivo baixado da pasta Downloads e move para a pasta destino
-    def espera_completar_download(self, pasta_download: str, tempo_limite: int = 120,
+    def espera_completar_download(self, pasta_download: str, tempo_limite: int = 30,
                                   extensoes_temporarias: list = None):
         """
         Aguarda a conclusão de um download verificando a ausência de arquivos temporários.
@@ -1058,7 +1073,7 @@ class Robo:
         print(f'📂 Total de arquivos movidos: {moved_files}')
 
     # Cria uma pasta com o nome especificado no one-drive e retorna o caminho.
-    def criar_pasta(self, nome_pasta: str, caminho_pasta_onedrive: str) -> str:
+    def criar_pasta(self, nome_pasta: str, caminho_pasta_onedrive: str, tipo_instrumento: str) -> str:
         """Cria uma pasta com o nome especificado no caminho do OneDrive.
 
             Substitui caracteres '/' por '_' no nome da pasta para evitar erros.
@@ -1066,6 +1081,7 @@ class Robo:
             Args:
                 nome_pasta: O número da proposta (nome da pasta a ser criada).
                 caminho_pasta_onedrive: O caminho base para a pasta do OneDrive.
+                tipo_instrumento: Identificador de tipo de consulta executada.
 
             Returns:
                 O caminho completo da pasta criada.
@@ -1074,7 +1090,7 @@ class Robo:
                 Exception: Se ocorrer um erro durante a criação da pasta.
         """
         # Combina o caminho base do OneDrive com o nome da pasta, substituindo '/' por '_'
-        nome_pasta = nome_pasta
+        nome_pasta = nome_pasta + '_' + tipo_instrumento
         caminho_pasta = os.path.join(caminho_pasta_onedrive, nome_pasta.replace('/', '_'))
 
         try:
@@ -1089,7 +1105,7 @@ class Robo:
         # Retorna o caminho completo da pasta, mesmo que a criação tenha falhado (para tratamento posterior)
         return caminho_pasta
 
-    def extrair_dados_excel(self, caminho_arquivo_fonte, busca_id: str,
+    def extrair_dados_excel(self, caminho_arquivo_fonte, busca_id: str, tipo_instrumento_id: str,
                             situacional_id: str) -> tuple:
         """
            Lê os contatos de uma planilha Excel e executa ações baseadas nos dados extraídos.
@@ -1097,6 +1113,7 @@ class Robo:
            Args:
                caminho_arquivo_fonte (str): Caminho do arquivo Excel que será lido.
                busca_id (str): Nome da coluna que contém os números de processo.
+               tipo_instrumento_id (str): Nome da coluna que contém o tipo de processo.
            """
 
         pd.set_option('future.no_silent_downcasting', True)
@@ -1107,12 +1124,14 @@ class Robo:
 
         # Cria um lista para cada coluna do arquivo xlsx
         numero_processo = list()
+        tipo_instrumento = list()
         situacional = list()
 
         try:
             # Itera a planilha e armazena os dados em listas
             for indice, linha in dados_processo.iterrows():  # Assume que a primeira linha e um cabeçalho
                 numero_processo.append(linha[busca_id])  # Busca o número do processo
+                tipo_instrumento.append(linha[tipo_instrumento_id])  # Busca o tipo de instrumento
                 situacional.append(linha[situacional_id]) # Busca a situação do processo
         except Exception as e:
             exc_type, exc_value, exc_tb = sys.exc_info()
@@ -1120,7 +1139,7 @@ class Robo:
 
             print(f"❌ Erro de leitura encontrado, erro: {e}")
 
-        return numero_processo, situacional
+        return numero_processo, tipo_instrumento, situacional
 
     # Verifica se a pasta está vazia
     def pasta_vazia(self, pasta_pai: str) -> list:
@@ -1288,15 +1307,16 @@ def main() -> None:
     pasta_download = r'C:\Users\felipe.rsouza\Downloads'
 
     # Caminho do arquivo .xlsx que contem os dados necessários para rodar o robô
-    caminho_arquivo_fonte = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                    r'Social\Automações SNEAELIS\Analise_Custos_Exec_Print\source\RTMA Passivo 2024 - '
-                    r'PROJETOS E PROGRAMAS (3) Atualizado em Julho de.2025.xlsx ')
+    caminho_arquivo_fonte = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
+                             r'Assistência Social\Automações SNEAELIS\Analise_Custos_Exec_Print\source'
+                             r'\RTMA Passivo 2024 - PROJETOS E PROGRAMAS (3) Atualizado em Julho '
+                             r'de.2025.xlsx')
     # Rota da pasta onde os arquivos baixados serão alocados, cada processo terá uma subpasta dentro desta
-    caminho_pasta_onedrive = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                    r'Social\Automações SNEAELIS\Analise_Custos_Exec_Print')
+    caminho_pasta_onedrive = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
+                              r'Assistência Social\Automações SNEAELIS\Analise_Custos_Exec_Print')
     # Caminho do arquivo JSON que serve como catão de memória
     arquivo_log = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                    r'Social\Automações SNEAELIS\Analise_Custos_Exec_Print\source\arquivo_log.json')
+                   r'Social\Automações SNEAELIS\Analise_Custos_Exec_Print\source\arquivo_log.json')
 
     try:
         # Instancia um objeto da classe Robo
@@ -1309,36 +1329,43 @@ def main() -> None:
         print(f"\n‼️ Erro fatal ao iniciar o robô: {e}")
         sys.exit("Parando o programa.")
 
-    numero_processo, situacional = robo.extrair_dados_excel(
+    numero_processo, tipo_instrumento, situacional = robo.extrair_dados_excel(
         caminho_arquivo_fonte=caminho_arquivo_fonte,
         busca_id='Instrumento nº',
+        tipo_instrumento_id='Regime Jurídico do Instrumento (Modalidade)',
         situacional_id='SITUACIONAL'
         )
 
+    max_linha = len(numero_processo)
 
     # Pós-processamento dos dados para não haver erros na execução do programa
     numero_processo = robo.limpa_dados(numero_processo)
+    tipo_instrumento = robo.limpa_dados(tipo_instrumento)
+
+
+    # input para reset do arquivo JSON
+    reset = 'n'#input('Deseja resetar o robô? s/n: ')
+    if reset.lower() == 's':
+        robo.reset(arquivo_log=arquivo_log)
 
     # Em caso de parada o programa recomeça da última linha iterada
+    progresso = robo.carrega_progresso(arquivo_log)
     # Inicia o processo de consulta do instrumento
     robo.consulta_instrumento()
 
     inicio_range = 0
-    max_linha = 30
-
-    done_set = set()
+    if progresso["indice"] > 0:
+        inicio_range = progresso["indice"] + 1
 
     for indice in range(inicio_range, max_linha):
         eta()
-        if numero_processo[indice] in done_set:
-            continue
-
         if situacional[indice] != '':
             continue
         try:
             # Cria pasta com número do processo
             caminho_pasta = robo.criar_pasta(nome_pasta=numero_processo[indice],
-                                             caminho_pasta_onedrive=caminho_pasta_onedrive)
+                                             caminho_pasta_onedrive=caminho_pasta_onedrive,
+                                             tipo_instrumento=tipo_instrumento[indice])
 
             # Executa pesquisa dos termos e salva os resultados na pasta "caminho_pasta"
             robo.loop_de_pesquisa(

@@ -1540,7 +1540,7 @@ def main():
     driver = conectar_navegador_existente()
 
     planilha_final = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
-                      r"Social\Teste001\Sofia\Emendas pix 2025\Emendas pix 2025 - Copia.xlsx")
+                      r"Social\Teste001\Sofia\Emendas pix 2024\Sofia Emendas PIX 2024 - Copia.xlsx")
 
     try:
         df = pd.read_excel(planilha_final, engine='openpyxl').astype(object)

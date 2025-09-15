@@ -1,21 +1,15 @@
-import sys
-
-from fontTools.subset.svg import xpath
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait, Select
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import (TimeoutException, NoSuchElementException,
                                         ElementClickInterceptedException, WebDriverException,
                                         StaleElementReferenceException)
 from selenium.webdriver.chrome.service import Service
-from functools import wraps
 import pandas as pd
 import time
 import os
-import numpy as np
 
 
 # Função para conectar ao navegador já aberto
@@ -71,6 +65,7 @@ def clicar_elemento(driver, xpath, text: bool=True, retries=10):
         driver: WebDriver instance
         xpath: XPath of the element to click
         retries: Number of retry attempts
+        text: Control the printing
     """
     last_error = None
 
