@@ -10,10 +10,12 @@ import numpy as np
 
 import requests
 
+from pandas import ExcelWriter
+
 from typing import List
 
-from colorama import  Fore, Style
-from rapidfuzz.distance.DamerauLevenshtein_py import similarity
+from colorama import  Fore
+from selenium.webdriver.common.devtools.v138.dom import get_attributes
 
 from thefuzz import process, fuzz
 
@@ -128,13 +130,14 @@ class Robo:
     def  busca_endereco(self, cnpj_xlsx):
         cod_municipio_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
                               r'Assistência Social\Teste001\municipios.xlsx')
-        time.sleep(1)
+        time.sleep(0.5)
         try:
             print(f'🔍 Iniciando busca de endereço'.center(50, '-'), '\n')
 
             # Aba Participantes
             self.webdriver_element_wait('/html/body/div[3]/div[14]/div[1]/div/div[2]/a[3]/div/span').click()
             # Botão detalhar
+            time.sleep(0.5)
             self.webdriver_element_wait('//*[@id="form_submit"]').click()
 
             cnjp_web = self.webdriver_element_wait('//*[@id="txtCNPJ"]').text
@@ -283,8 +286,8 @@ class Robo:
 
 
     # Loop para adicionar PAD da proposta
-    def loop_de_pesquisa(self, df, numero_processo: str, arquivo_log: str, tipo_desp: str,
-                         cod_natur_desp: str, cnpj_xlsx: str):
+    def loop_de_pesquisa(self, df, numero_processo: str, tipo_desp: str,
+                         cod_natur_desp: str, cnpj_xlsx: str, caminho_arquivo_fonte: str):
         def sanitize_txt(txt:str) -> str:
             """
                Sanitizes text by replacing special characters with form-friendly alternatives.
@@ -313,8 +316,42 @@ class Robo:
             except Exception as err:
                 print(f"Error sanitizing text: {str(err)[:100]}")
                 return txt
+
+        def mark_as_done(status_df, index, file_path):
+            """Safely mark row as done and save to Excel"""
+            try:
+                index = str(index)
+
+                status_df.loc[status_df['Index'] == index, 'Status'] = 'feito'
+
+                # Verify the modification
+                modified_value = status_df.loc[status_df['Index'] == index, 'Status'].values
+                if len(modified_value) > 0 and modified_value[0] == 'feito':
+                    print("✅ DataFrame modification successful")
+                else:
+                    print("❌ DataFrame modification failed!")
+
+                with ExcelWriter(file_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                    # Save to Excel
+                    status_df.to_excel(writer, index=False, sheet_name='Status')
+
+                return True
+
+            except Exception as err:
+                print(f"❌ Error in mark_as_done: {str(err)[:100]}\n")
+                return False
+
+        def clear_digits(txt):
+            """
+                Remove all integers from text (both leading and trailing)
+                """
+            return re.sub(r'^\d+\s*|\s*\d+$', '', txt).strip()
+
+
         # Inicia o processo de consulta do instrumento
         try:
+            status_df = pd.read_excel(caminho_arquivo_fonte, dtype=str, sheet_name='Status')
+
             # Pesquisa pelo processo
             self.campo_pesquisa(numero_processo=numero_processo)
 
@@ -326,7 +363,7 @@ class Robo:
 
             # Seleciona lista de anexos execução e manda baixar os arquivos
             print('🌐 Acessando página de preenchimento PAD'.center( 50, '-'), '\n')
-            time.sleep(1)
+            time.sleep(1.5)
             tipo_serv = self.map_tipos(tipo_desp)
 
             # Locate the dropdown element
@@ -335,8 +372,20 @@ class Robo:
             # Select by visible text
             dropdown.select_by_value(f"{tipo_serv}")
 
-            # Clica para incluir
-            self.driver.find_element(By.XPATH, '//*[@id="form_submit"]').click()
+            try:
+                # Clica para incluir
+                btn_incluir = self.driver.find_element(By.XPATH, '//*[@id="form_submit"]')
+                if btn_incluir.get_attribute("value") == 'Incluir':
+                    btn_incluir.click()
+                else:
+                    log_fechados = (
+                        r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                        r'Social\SNEAELIS - Robô PAD\lista_pad_fechados.json')
+                    self.salva_progresso(arquivo_log=log_fechados, nome_arquivo=numero_processo)
+                    return False
+            except Exception:
+                print(f'Botão de incluir não localizado, pulando processo: {numero_processo}')
+                return
 
             lista_campos = [
                 # [0] Descrição do item
@@ -356,41 +405,79 @@ class Robo:
             ]
 
             print('📝 Preenchendo PAD'.center(50, '-'), '\n')
+
             for idx, row in df.iterrows():
+                # Lê a planilha guia, com marcação dos itens já feitos
+                # Verifica se alguma linha já foi executada
+                if status_df.iloc[idx, 1] == 'feito':
+                    print(f'Linha {idx} já executada. Pulando linha\n')
+                    continue
                 print(f"Preenchendo item nº:{idx} {str(row.iloc[2])}\n".center(50))
                 try:
                     # Descrição do item
                     desc_item_txt = str(row.iloc[2]) + '\n' + str(row[3])
                     desc_item_txt = sanitize_txt(desc_item_txt)
-                    self.webdriver_element_wait(lista_campos[0]).send_keys(desc_item_txt)
+                    desc_item = self.webdriver_element_wait(lista_campos[0])
+                    desc_item.clear()
+                    desc_item.send_keys(desc_item_txt)
 
                     # Código da Natureza de Despesa
-                    self.webdriver_element_wait(lista_campos[1]).send_keys(cod_natur_desp)
+                    cod_natur = self.webdriver_element_wait(lista_campos[1])
+                    cod_natur.clear()
+                    cod_natur.send_keys(cod_natur_desp)
 
                     # Unidade Fornecimento
-                    un_fornecimento = str(row.iloc[8]).strip().lower()
-                    if un_fornecimento == 'mensal':
+                    un_fornecimento = str(row.iloc[10]).strip().lower()
+                    un_fornecimento = clear_digits(un_fornecimento)
+
+                    if ' ' in un_fornecimento:
+                        un_fornecimento = un_fornecimento.split(' ')[-1]
+                    if un_fornecimento in ['mensal', 'mês', 'meses']:
                         un_fornecimento = 'MÊS'
-                    elif un_fornecimento == 'unidade':
+                    elif un_fornecimento in ['unidade', 'unidades']:
                         un_fornecimento = 'UN'
-                    elif un_fornecimento == 'diaria' or un_fornecimento == 'diária':
+                    elif un_fornecimento in ['diaria', 'diária', 'diárias']:
                         un_fornecimento = 'DIA'
-                    self.webdriver_element_wait(lista_campos[2]).send_keys(un_fornecimento)
+                    elif un_fornecimento in ['metro']:
+                        un_fornecimento = 'M'
+                    elif pd.isna(un_fornecimento) or un_fornecimento == 'nan' or un_fornecimento == 'N/A':
+                        print('Valor não encontrado ou igual a zero\n')
+                        continue
+
+                    un_forn_field = self.webdriver_element_wait(lista_campos[2])
+                    un_forn_field.clear()
+                    un_forn_field.send_keys(un_fornecimento)
 
                     # Valor Total
-                    valor_total = str(row.iloc[23])
+                    valor_total = str(row.iloc[24])
+                    if pd.isna(valor_total) or valor_total == 'nan' or valor_total == 'N/A':
+                        print('Valor não encontrado ou igual a zero\n')
+                        continue
+
                     if '.' in valor_total:
-                        self.webdriver_element_wait(lista_campos[3]).send_keys(valor_total)
+                        if len(valor_total.split('.')[-1]) == 1:
+                            valor_total = valor_total + "0"
                     else:
-                        valor_total = str(row.iloc[23]) + "00"
-                        self.webdriver_element_wait(lista_campos[3]).send_keys(valor_total)
+                        valor_total = valor_total + "00"
+
+                    valor_total_field = self.webdriver_element_wait(lista_campos[3])
+                    valor_total_field.clear()
+                    valor_total_field.send_keys(valor_total)
 
                     # Quantidade
-                    qtd = str(row.iloc[9])+"00"
-                    self.webdriver_element_wait(lista_campos[4]).send_keys(qtd)
+                    qtd = str(row.iloc[9])
+                    if pd.isna(valor_total) or valor_total == 'nan' or valor_total == 'N/A':
+                        print('Valor não encontrado ou igual a zero\n')
+                        continue
+                    qtd = qtd + "00"
+                    qtd_field = self.webdriver_element_wait(lista_campos[4])
+                    qtd_field.clear()
+                    qtd_field.send_keys(qtd)
 
                     # Endereço de Localização
-                    self.webdriver_element_wait(lista_campos[5]).send_keys(endereco)
+                    end_loc = self.webdriver_element_wait(lista_campos[5])
+                    end_loc.clear()
+                    end_loc.send_keys(endereco)
 
                     # CEP
                     cep_element = self.webdriver_element_wait(lista_campos[6])
@@ -405,15 +492,37 @@ class Robo:
                     self.driver.find_elements(By.CSS_SELECTOR, "input#form_submit")[0].click()
                     time.sleep(2)
 
+                    try:
+                        # Try to find the CAPTCHA error
+                        error_captcha = (WebDriverWait(self.driver, 1.2)
+                                         .until(EC.visibility_of_element_located((By.CLASS_NAME, 'errors'))))
+                        # If we get here, CAPTCHA error WAS found
+                        print("CAPTCHA error detected - not marking as done")
+                        if error_captcha:
+                            sys.exit("Erro no preenchimento do PAD.\nTerminando execução")
+                    except TimeoutException:
+                        try:
+                            if mark_as_done(status_df, idx, caminho_arquivo_fonte):
+                                print("✅ Successfully marked and saved\n")
+                            else:
+                                print("❌ Failed to save\n")
+                        except Exception as e:
+                            print(f"❌ Error saving to Excel: {type(e).__name__}\n Erro {str(e)[:100]}\n")
+                    except Exception as er:
+                        print(f"❌ Falha {type(er).__name__}.\nErro{er}\n")
                 except Exception as e:
                     exc_type, exc_value, exc_tb = sys.exc_info()
                     print(f"Error occurred at line: {exc_tb.tb_lineno}")
-                    print(f"❌ Falha ao cadastrar PAD {type(e).__name__}.\n Erro: {str(e)[:80]}")
-                    sys.exit()
+                    print(f"❌ Falha ao cadastrar PAD {type(e).__name__}.\n Erro: {str(e)[:80]}\n")
+                    return False
+
             # Botão "Encerrar"
+            time.sleep(1)
             self.driver.find_elements(By.CSS_SELECTOR, "input#form_submit")[1].click()
             time.sleep(1)
             self.consulta_proposta()
+            return True
+
         except TimeoutException as t:
             exc_type, exc_value, exc_tb = sys.exc_info()
             print(f'TIMEOUT {str(t)[:50]}')
@@ -475,7 +584,7 @@ class Robo:
 
     def extrair_dados_excel(self, caminho_arquivo_fonte):
         try:
-            data_frame = pd.read_excel(caminho_arquivo_fonte, dtype=str, header=None)
+            data_frame = pd.read_excel(caminho_arquivo_fonte,dtype=str,header=None,sheet_name=0)
 
             return data_frame
         except Exception as e:
@@ -488,7 +597,7 @@ class Robo:
         """
         Salva o progresso atual em um arquivo JSON.
         :param arquivo_log: Endereço do arquivo JSON.
-        :param nome_arquivo: O nome do arquivo que foi executado.
+        :param nome_arquivo: O nome do processo que foi executado.
         """
 
         # Carrega os dados antigos
@@ -603,7 +712,7 @@ class Robo:
 def main() -> None:
     # Caminho do arquivo JSON que serve como catão de memória
     arquivo_log = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                   r'Social\Teste001\PAD\lista_exec_pad.json')
+                   r'Social\SNEAELIS - Robô PAD\lista_exec_pad.json')
     # Caminho do arquivo .xlsx que contem os dados necessários para rodar o robô
     dir_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
                 r'Social\SNEAELIS - Robô PAD')
@@ -622,7 +731,7 @@ def main() -> None:
                 if filename in lista_arq_exec:
                     continue
                 caminho_arquivo_fonte = os.path.join(root, filename)
-                print(f"\nExecuting file: {filename}".center(50, '-'), '\n')
+                print(f"\n{'⚡' * 3}🚀 EXECUTING FILE: {filename} 🚀{'⚡' * 3}".center(70, '='), '\n')
 
                 # Referência para o código de natureza da despesa
                 cod_natureza_despesa = {
@@ -642,6 +751,21 @@ def main() -> None:
 
                 # DataFrame do arquivo excel
                 df = robo.extrair_dados_excel(caminho_arquivo_fonte=caminho_arquivo_fonte)
+                
+                try:
+                    pd.read_excel(caminho_arquivo_fonte, dtype=str, sheet_name='Status')
+                    print(f'Sheet found!')
+                except ValueError:
+                    print(f'Sheet NOT found !')
+                    print(f'Creating Sheet !')
+                    # Create new status DataFrame if sheet doesn't exist
+                    status_df = pd.DataFrame({
+                        'Index': df.index,
+                        'Status': [''] * len(df)
+                    })
+                    with pd.ExcelWriter(caminho_arquivo_fonte, engine='openpyxl', mode='a',
+                                        if_sheet_exists='replace') as writer:
+                        status_df.to_excel(writer, sheet_name='Status', index=False)
 
                 # inicia consulta e leva até a página de busca do processo
                 robo.consulta_proposta()
@@ -650,6 +774,8 @@ def main() -> None:
                 numero_processo = robo.fix_prop_num(numero_processo_temp)
 
                 cnpj_xlsx = df.loc[df[0] == 'CNPJ:', 1].iloc[0]
+
+                robo_certo = False
 
                 unique_values = []
                 unique_values_col_b = df[1].unique()
@@ -672,16 +798,22 @@ def main() -> None:
 
                         if grouped_df.empty:
                             continue
-                        robo.loop_de_pesquisa(df=grouped_df,
-                                              arquivo_log=arquivo_log,
-                                              numero_processo=numero_processo,
-                                              tipo_desp=value,
-                                              cod_natur_desp=robo.map_cod_natur_desp(
-                                                    dict_cod=cod_natureza_despesa,
-                                                    cod=value
-                                                    ),
-                                              cnpj_xlsx=cnpj_xlsx
-                                              )
+
+                        robo_certo = robo.loop_de_pesquisa(df=grouped_df,
+                                                  numero_processo=numero_processo,
+                                                  tipo_desp=value,
+                                                  cod_natur_desp=robo.map_cod_natur_desp(
+                                                        dict_cod=cod_natureza_despesa,
+                                                        cod=value
+                                                        ),
+                                                  cnpj_xlsx=cnpj_xlsx,
+                                                  caminho_arquivo_fonte = caminho_arquivo_fonte
+                                                  )
+                        # Check the possibility of filling the webform if the element to that allow
+                        # filling it is not present goes to the next file on execution line
+                        if not robo_certo:
+                            break
+
                     except KeyboardInterrupt:
                         print("Script stopped by user (Ctrl+C). Exiting cleanly.")
                         sys.exit(0) # Exit gracefully
@@ -691,8 +823,10 @@ def main() -> None:
                         print(f"❌ Falha ao executar script. Erro: {type(e).__name__}\n{str(e)[:100]}")
                         sys.exit(0)  # Exit gracefully
 
-                robo.salva_progresso(arquivo_log=arquivo_log, nome_arquivo=filename)
-                robo.create_pad_file(os.path.join(root))
+                if robo_certo:
+                    robo.salva_progresso(arquivo_log=arquivo_log, nome_arquivo=filename)
+                    robo.create_pad_file(os.path.join(root))
+
 
 if __name__ == "__main__":
     start_time = time.time()

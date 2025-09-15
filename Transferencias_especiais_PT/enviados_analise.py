@@ -1,6 +1,7 @@
 import time
 import win32com.client as win32
 from datetime import datetime
+import os
 
 import pandas as pd
 
@@ -563,10 +564,11 @@ def send_emails_from_excel(excel_path,):
             e_mail = outlook.CreateItem(0)
 
             e_mail.To = email
+            e_mail.CC = 'maria.dourado@esporte.gov.br'
             e_mail.Subject = subject
             e_mail.HTMLBody = html_body
 
-            e_mail.Display()  # Opens email for review (instead of .Send())
+            e_mail.Send()  # Opens email for review (instead of .Send())
             print(f"📧 Email prepared for: {email}")
             return True
         except Exception as e:
@@ -577,12 +579,16 @@ def send_emails_from_excel(excel_path,):
         """Generates HTML body from Excel data only."""
         today = datetime.now().strftime("%d/%m/%Y")
         subject = f"Atualização das diligencias. Data {today}"
-        html_body = """<!DOCTYPE html>
+        html_body = f"""<!DOCTYPE html>
         <html>
         <head>
             <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
         </head>
         <body style="font-family: 'Courier New', monospace; margin: 0; padding: 0;">
+        <div style="padding: 10px; background-color: #f0f0f0; border-bottom: 1px solid #ccc;
+         font-weight: bold;">
+            Arquivo: {os.path.basename(excel_path)}
+        </div>
         <table width="100%" border="0" cellspacing="0" cellpadding="0">
             <tr>
                 <td>"""
@@ -631,8 +637,10 @@ def send_emails_from_excel(excel_path,):
                     extra_data_list.append(extra_data)
 
             print(f'Número de planos de ação no email: {len(extra_data_list)}')
-
-            return email, extra_data_list
+            if extra_data_list:
+                return email, extra_data_list
+            else:
+                return [], []
 
         except Exception as e:
             print(f"❌ Failed to read Excel file: \n{e}")
@@ -641,20 +649,25 @@ def send_emails_from_excel(excel_path,):
     # Read data
     email, extra_data_list = read_excel_data()
 
+    try:
+        if email or extra_data_list:
+        # Prepare emails
+            html_body, subject = generate_email_body(extra_data_list)  # Pass single entry
+            prepare_outlook_email(email, subject, html_body)
+    except Exception as e:
+        print(f"❌ No data to prepare email for {type(e).__name__}: \n{str(e)[:100]}")
 
-    # Prepare emails
-    html_body, subject = generate_email_body(extra_data_list)  # Pass single entry
-    prepare_outlook_email(email, subject, html_body)
 
 if __name__ == "__main__":
-    #xlsx_path_2025
-    xlsx_paths = [(r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+    xlsx_paths = [
+        #xlsx_path_2025
+        (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
                       r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - '
                    r'Copia.xlsx'),
-    #xlsx_path_2024
-     (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                      r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise - '
-                      r'Copia.xlsx')
+        # xlsx_path_2024
+        (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+         r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - resprovados - '
+         r'Copia.xlsx')
     ]
     xlsx_paths_copy = [
         #xlsx_path_2025
@@ -663,8 +676,9 @@ if __name__ == "__main__":
          r'Copia.xlsx'),
         # xlsx_path_2024
         (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-        r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise - Copia - Copia.xlsx')
-                  ]
+         r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - resprovados - '
+         r'Copia - Copia.xlsx')
+    ]
     for idx, path in enumerate(xlsx_paths):
         main(path)
         update_xlsx(path, xlsx_paths_copy[idx])
