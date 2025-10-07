@@ -1,9 +1,11 @@
 import time
 import win32com.client as win32
-from datetime import datetime
 import os
+import sys
 
 import pandas as pd
+
+from datetime import datetime
 
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
@@ -263,7 +265,7 @@ def extract_all_rows_text(driver, table_xpath, timeout=10, count: int = 0):
 
 
 # Navega pela primeira página e coleta os dados
-def loop_segunda_pagina(driver, index, df_path) -> bool:
+def loop_segunda_pagina(driver, index, df_path, sheet_name, df) -> bool:
     lista_caminhos = [
          # [0] > Aba Plano de Trabalho
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/'
@@ -272,33 +274,23 @@ def loop_segunda_pagina(driver, index, df_path) -> bool:
         # [1] > Historico Sistema +  Historico Concluido
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano'
-        '-trabalho/br-fieldset[2]/fieldset/div[2]/div/div/br-table/div/ngx-datatable',
+        '-trabalho/br-fieldset[2]/fieldset/div[2]',
     ]
 
     # Aba Plano de Trabalho
     clicar_elemento(driver, lista_caminhos[0])
 
     # Histórico section
-    if coletar_dados_hist(driver, lista_caminhos[1], index=index, df_path=df_path):
+    if coletar_dados_hist(driver, lista_caminhos[1], index=index, df_path=df_path, sheet_name=sheet_name,
+                          df=df):
         return True
 
     return False
 
 
 # Coleta os dados do histórico
-def coletar_dados_hist(driver, tabela_xpath, index, df_path) -> bool:
-    df = pd.read_excel(df_path, dtype=str)
+def coletar_dados_hist(driver, tabela_xpath, index, df_path, sheet_name, df) -> bool:
     try:
-        # Wait for table to be present
-        try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.XPATH, tabela_xpath))
-            )
-            print("ℹ️ Tabela de objetos localizada")
-        except Exception as erro:
-            print(f"⚠️ Tabela não encontrada: {erro}")
-            return False
-
         # Get all rows in the table body
         rows = WebDriverWait(driver, 10).until(
             EC.presence_of_all_elements_located(
@@ -334,7 +326,7 @@ def coletar_dados_hist(driver, tabela_xpath, index, df_path) -> bool:
         if data:
             for j, col_name in enumerate(colunas_para_salvar):
                 df.at[index, col_name] = data[j]
-            df.to_excel(df_path, index=False, engine='openpyxl')
+            df.to_excel(df_path,sheet_name=sheet_name, index=False, engine='openpyxl')
             print(f"✅ Dados salvos em {df_path[-30:]}\n")
 
             return True
@@ -343,7 +335,10 @@ def coletar_dados_hist(driver, tabela_xpath, index, df_path) -> bool:
             return False
 
     except Exception as erro:
-        print(f"❌ Erro ao coletar dados: {erro}")
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+
+        print(f"❌ Erro ao coletar dados: {type(erro).__name__}")
 
 
 def reset_browser(driver):
@@ -367,180 +362,162 @@ def main(xlsx_path):
     planilha_final = xlsx_path
 
     try:
-        df = pd.read_excel(planilha_final)
-        try:
-            drop_rows = []
-            for i, r in df.iterrows():
-                if pd.notna(r.iloc[2]):
-                    drop_rows.append(i)
-            df.drop(drop_rows, inplace=True)
-            df.to_excel(planilha_final, index=False, engine='openpyxl')
-            print(f"✅ Nº de dados removidos: {len(drop_rows)}\n")
-        except Exception as e:
-            print(f'{type(e).__name__}\n{e[:80]}')
+        all_sheets = pd.read_excel(planilha_final, sheet_name=None)
 
-        df = pd.read_excel(planilha_final)
-        print(f"✅ Planilha lida com {len(df)} linhas.")
-
-        if df["Código do Plano de Ação"].duplicated().any():
-            print("⚠️ Aviso: Há códigos duplicados na planilha. Removendo duplicatas...")
-            df = df.drop_duplicates(subset=["Código do Plano de Ação"], keep="first")
-
-        reset_browser(driver)
-        # Processa cada linha do DataFrame usando o índice
-        num_new_data = 0
-        for index, row in df.iterrows():
-            codigo = str(row["Código do Plano de Ação"])  # Garante que o código seja string
-            print(f"\n⚙️ Processando código: {codigo} (índice: {index})\n")
-
-            # Clica no ícone para filtrar
-            clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/div/div/div/"
-                                    "main/transferencia-especial-main/transferencia-plano-acao/transferencia-plano-acao-consulta/br-table/div/div/div/button/i")
-
+        for sheet_name, df in all_sheets.items():
+            print(f"\n{'=' * 50}")
+            print(f"📊 Processando planilha: {sheet_name}\n N° de linhas:{len(df)}.")
+            print(f"{'=' * 50}")
             try:
-                # Insere o código no campo de filtro
-                xpath_campo_filtro = ("/html/body/transferencia-especial-root/br-main-layout/"
-                                      "div/div/div/main/transferencia-especial-main/transferencia-plano-acao/"
-                                      "transferencia-plano-acao-consulta/br-table/div/br-fieldset/fieldset/"
-                                      "div[2]/form/div[1]/div[2]/br-input/div/div[1]/input")
-                if not inserir_texto(driver, xpath_campo_filtro, codigo):
-                    raise Exception("Falha ao inserir o código no filtro")
+                drop_rows = []
+                for i, r in df.iterrows():
+                    if pd.notna(r.iloc[2]):
+                        drop_rows.append(i)
+                df.drop(drop_rows, inplace=True)
+                df.to_excel(planilha_final,sheet_name=sheet_name, index=False, engine='openpyxl')
+                print(f"✅ Nº de dados removidos da planilha '{sheet_name}': {len(drop_rows)}")
+            except Exception as e:
+                print(f'{type(e).__name__}\n{e[:80]}')
 
-                # Variáveis para o retry
-                max_tentativas = 10  # Número máximo de tentativas
-                tentativa = 1
-                codigo_tabela_xpath = ("/html/body/transferencia-especial-root/br-main-layout/div/div/div"
-                                       "/main/transferencia-especial-main/transferencia-plano-acao"
-                                       "/transferencia-plano-acao-consulta/br-table/div/ngx-datatable/div"
-                                       "/datatable-body/datatable-selection/datatable-scroller/datatable"
-                                       "-row-wrapper/datatable-body-row/div[2]/datatable-body-cell[2]/div")
-                codigo_correspondente = False
+            print(f"✅ Planilha {sheet_name} lida com {len(df)} linhas.")
 
-                while tentativa <= max_tentativas and not codigo_correspondente:
-                    print(f"ℹ️ Tentativa {tentativa} de {max_tentativas} para filtrar o código {codigo}")
+            if df["Código do Plano de Ação"].duplicated().any():
+                print("⚠️ Aviso: Há códigos duplicados na planilha. Removendo duplicatas...")
+                df = df.drop_duplicates(subset=["Código do Plano de Ação"], keep="first")
 
-                    # Aplica o filtro
-                    if not clicar_elemento(driver,
-                                           "/html/body/transferencia-especial-root/br-main-layout/div/"
-                                           "div/div/main/transferencia-especial-main/"
-                                           "transferencia-plano-acao/transferencia-plano-acao-consulta/"
-                                           "br-table/div/br-fieldset/fieldset/div[2]/form/div[5]/"
-                                           "div/button[2]"):
+            reset_browser(driver)
+            # Processa cada linha do DataFrame usando o índice
+            num_new_data = 0
+            for index, row in df.iterrows():
+                codigo = str(row["Código do Plano de Ação"])  # Garante que o código seja string
+                print(f"\n⚙️ Processando código: {codigo} (índice: {index})\n")
 
-                        raise Exception("Falha ao aplicar o filtro")
-
-                    # Aguarda a tabela atualizar
-                    WebDriverWait(driver, 7).until(
-                        EC.presence_of_element_located((By.XPATH, codigo_tabela_xpath))
-                    )
-                    time.sleep(0.5)  # Pequeno delay adicional para garantir a atualização
-
-                    # Verifica o código na tabela
-                    codigo_tabela = obter_texto(driver, codigo_tabela_xpath)
-                    if not codigo_tabela:
-                        print(f"⚠️ Não foi possível obter o código na tabela na tentativa {tentativa}")
-                    elif codigo_tabela.strip() == codigo.strip():
-                        print(f"✅ Código verificado com sucesso: {codigo_tabela}")
-                        codigo_correspondente = True
-                    else:
-                        print(f"⚠️ Código na tabela ({codigo_tabela}) não corresponde ao inserido ({codigo})"
-                              f" na tentativa {tentativa}")
-                        time.sleep(1)  # Espera antes de tentar novamente
-
-                    tentativa += 1
-
-                if not codigo_correspondente:
-                    raise Exception(f"Falha ao filtrar o código {codigo} após {max_tentativas} tentativas."
-                                    f" Último código na tabela: {codigo_tabela}")
-
-                # Clica em "Detalhar" somente se o código estiver correto
-                detalhar_xpath = ("/html/body/transferencia-especial-root/br-main-layout/div/div/div/main"
-                                  "/transferencia-especial-main/transferencia-plano-acao/transferencia"
-                                  "-plano-acao-consulta/br-table/div/ngx-datatable/div/datatable-body"
-                                  "/datatable-selection/datatable-scroller/datatable-row-wrapper/datatable"
-                                  "-body-row/div[2]/datatable-body-cell[9]/div/div/button")
-
-                if not clicar_elemento(driver, detalhar_xpath):
-                    raise Exception("Falha ao clicar em 'Detalhar'")
-
-                remover_backdrop(driver)
-
-                # Navega até "Plano de Trabalho"
-                remover_backdrop(driver)
-                if not clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/"
-                                               "div/div/div/main/transferencia-especial-main/"
-                                               "transferencia-plano-acao/transferencia-cadastro/br-tab-set/"
-                                               "div/nav/ul/li[3]/button"):
-                    raise Exception("Falha ao navegar para 'Plano de Trabalho'")
-
-                # Coleta os dados da segunda pagina
-                if loop_segunda_pagina(driver=driver, index=index, df_path=planilha_final):
-                    num_new_data += 1
-                # Sobe para o topo da página
-                driver.execute_script("window.scrollTo(0, 0);")
-                # Clica em "Filtrar" para o próximo código
-                clicar_elemento(driver,
-                                "/html/body/transferencia-especial-root/br-main-layout/div/div/div/main"
-                                "/div[1]/br-breadcrumbs/div/ul/li[2]/a")
-
-            except Exception as erro:
-                last_error = truncate_error(f"Main loop element intercepted: {str(erro)}")
-                print(f"⚠️ {last_error}")
+                # Clica no ícone para filtrar
+                clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/div/div/div/"
+                                        "main/transferencia-especial-main/transferencia-plano-acao/transferencia-plano-acao-consulta/br-table/div/div/div/button/i")
 
                 try:
-                    clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/"
-                                            "div/div/div/main/transferencia-especial-main/"
-                                            "transferencia-plano-acao/transferencia-plano-acao-consulta/"
-                                            "br-table/div/div/div/button")
-                except:
-                    print("⚠️ Falha ao recuperar a tela de consulta. Reiniciando navegação...")
-                    driver.get("about:blank")
-                    clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/"
-                                            "br-header/header/div/div[2]/div/div[1]/button/span")
-                    clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/"
-                                            "div/div/div/div/br-side-menu/nav/div[3]/a/span[2]")
-                    remover_backdrop(driver)
-                    clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/"
-                                            "div/div/div/main/transferencia-especial-main/"
-                                            "transferencia-plano-acao/transferencia-plano-acao-consulta/"
-                                            "br-table/div/div/div/button/i")
-                continue
+                    # Insere o código no campo de filtro
+                    xpath_campo_filtro = ("/html/body/transferencia-especial-root/br-main-layout/"
+                                          "div/div/div/main/transferencia-especial-main/transferencia-plano-acao/"
+                                          "transferencia-plano-acao-consulta/br-table/div/br-fieldset/fieldset/"
+                                          "div[2]/form/div[1]/div[2]/br-input/div/div[1]/input")
+                    if not inserir_texto(driver, xpath_campo_filtro, codigo):
+                        raise Exception("Falha ao inserir o código no filtro")
 
-        print(f"✅ Todos os dados foram coletados e salvos na planilha!\n {num_new_data} "
-              f"novos dados adicionados")
+                    # Variáveis para o retry
+                    max_tentativas = 10  # Número máximo de tentativas
+                    tentativa = 1
+                    codigo_tabela_xpath = ("/html/body/transferencia-especial-root/br-main-layout/div/div/div"
+                                           "/main/transferencia-especial-main/transferencia-plano-acao"
+                                           "/transferencia-plano-acao-consulta/br-table/div/ngx-datatable/div"
+                                           "/datatable-body/datatable-selection/datatable-scroller/datatable"
+                                           "-row-wrapper/datatable-body-row/div[2]/datatable-body-cell[2]/div")
+                    codigo_correspondente = False
+
+                    while tentativa <= max_tentativas and not codigo_correspondente:
+                        print(f"ℹ️ Tentativa {tentativa} de {max_tentativas} para filtrar o código {codigo}")
+
+                        # Aplica o filtro
+                        if not clicar_elemento(driver,
+                                               "/html/body/transferencia-especial-root/br-main-layout/div/"
+                                               "div/div/main/transferencia-especial-main/"
+                                               "transferencia-plano-acao/transferencia-plano-acao-consulta/"
+                                               "br-table/div/br-fieldset/fieldset/div[2]/form/div[5]/"
+                                               "div/button[2]"):
+
+                            raise Exception("Falha ao aplicar o filtro")
+
+                        # Aguarda a tabela atualizar
+                        WebDriverWait(driver, 7).until(
+                            EC.presence_of_element_located((By.XPATH, codigo_tabela_xpath))
+                        )
+                        time.sleep(0.5)  # Pequeno delay adicional para garantir a atualização
+
+                        # Verifica o código na tabela
+                        codigo_tabela = obter_texto(driver, codigo_tabela_xpath)
+                        if not codigo_tabela:
+                            print(f"⚠️ Não foi possível obter o código na tabela na tentativa {tentativa}")
+                        elif codigo_tabela.strip() == codigo.strip():
+                            print(f"✅ Código verificado com sucesso: {codigo_tabela}")
+                            codigo_correspondente = True
+                        else:
+                            print(f"⚠️ Código na tabela ({codigo_tabela}) não corresponde ao inserido ({codigo})"
+                                  f" na tentativa {tentativa}")
+                            time.sleep(1)  # Espera antes de tentar novamente
+
+                        tentativa += 1
+
+                    if not codigo_correspondente:
+                        raise Exception(f"Falha ao filtrar o código {codigo} após {max_tentativas} tentativas."
+                                        f" Último código na tabela: {codigo_tabela}")
+
+                    # Clica em "Detalhar" somente se o código estiver correto
+                    detalhar_xpath = ("/html/body/transferencia-especial-root/br-main-layout/div/div/div/main"
+                                      "/transferencia-especial-main/transferencia-plano-acao/transferencia"
+                                      "-plano-acao-consulta/br-table/div/ngx-datatable/div/datatable-body"
+                                      "/datatable-selection/datatable-scroller/datatable-row-wrapper/datatable"
+                                      "-body-row/div[2]/datatable-body-cell[9]/div/div/button")
+
+                    if not clicar_elemento(driver, detalhar_xpath):
+                        raise Exception("Falha ao clicar em 'Detalhar'")
+
+                    remover_backdrop(driver)
+
+                    # Navega até "Plano de Trabalho"
+                    remover_backdrop(driver)
+                    if not clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/"
+                                                   "div/div/div/main/transferencia-especial-main/"
+                                                   "transferencia-plano-acao/transferencia-cadastro/br-tab-set/"
+                                                   "div/nav/ul/li[3]/button"):
+                        raise Exception("Falha ao navegar para 'Plano de Trabalho'")
+
+                    # Coleta os dados da segunda pagina
+                    if loop_segunda_pagina(driver=driver,
+                                           index=index,
+                                           df_path=planilha_final,
+                                           sheet_name=sheet_name,
+                                           df=df
+                    ):
+                        num_new_data += 1
+                    # Sobe para o topo da página
+                    driver.execute_script("window.scrollTo(0, 0);")
+                    # Clica em "Filtrar" para o próximo código
+                    clicar_elemento(driver,
+                                    "/html/body/transferencia-especial-root/br-main-layout/div/div/div/main"
+                                    "/div[1]/br-breadcrumbs/div/ul/li[2]/a")
+
+                except Exception as erro:
+                    last_error = truncate_error(f"Main loop element intercepted: {str(erro)}")
+                    print(f"⚠️ {last_error}")
+
+                    try:
+                        clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/"
+                                                "div/div/div/main/transferencia-especial-main/"
+                                                "transferencia-plano-acao/transferencia-plano-acao-consulta/"
+                                                "br-table/div/div/div/button")
+                    except:
+                        print("⚠️ Falha ao recuperar a tela de consulta. Reiniciando navegação...")
+                        driver.get("about:blank")
+                        clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/"
+                                                "br-header/header/div/div[2]/div/div[1]/button/span")
+                        clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/"
+                                                "div/div/div/div/br-side-menu/nav/div[3]/a/span[2]")
+                        remover_backdrop(driver)
+                        clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/"
+                                                "div/div/div/main/transferencia-especial-main/"
+                                                "transferencia-plano-acao/transferencia-plano-acao-consulta/"
+                                                "br-table/div/div/div/button/i")
+                    continue
+
+            print(f"✅ Todos os dados foram coletados e salvos na planilha!\n {num_new_data} "
+                  f"novos dados adicionados")
 
     except Exception as erro:
         last_error = truncate_error(f"Element intercepted: {str(erro)}")
         print(f"❌ {last_error}")
         print(f'{type(erro).__name__}')
 
-def update_xlsx(src_file, tgt_file):
-    source_file = src_file
-    target_file = tgt_file
-    # Read both spreadsheets into DataFrames
-    df_source = pd.read_excel(source_file, dtype=str)
-    df_target = pd.read_excel(target_file, dtype=str)
-
-    # Ensure columns are aligned and both have the same columns for update
-    column_to_update = df_source.columns
-
-    updated_count = 0  # Counter for updated rows
-
-    # Iterate over rows in source where column D (index 3) is not null/empty
-    for _, src_row in df_source[df_source.iloc[:, 3].notnull()].iterrows():
-        key_value = src_row.iloc[0]  # value in column A
-        # Find matching row in target where column A matches
-        match = df_target[df_target.iloc[:, 0] == key_value]
-        if not match.empty:
-            idx = match.index[0]
-            # Update all columns in the target row with source row's data
-            df_target.loc[idx, column_to_update] = src_row.values
-            updated_count += 1  # Increment counter
-
-    # Save the updated target file
-    df_target.to_excel(target_file, index=False)
-    print(f"Updated file saved as: {target_file}")
-    print(f"Number of rows updated: {updated_count}")
 
 
 def send_emails_from_excel(excel_path,):
@@ -662,25 +639,14 @@ if __name__ == "__main__":
     xlsx_paths = [
         #xlsx_path_2025
         (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                      r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - '
-                   r'Copia.xlsx'),
-        # xlsx_path_2024
+         r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - normal.xlsx'),
+
+        # xlsx_path_2025_reprovados
         (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-         r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - resprovados - '
-         r'Copia.xlsx')
+        r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - reprovados.xlsx')
     ]
-    xlsx_paths_copy = [
-        #xlsx_path_2025
-        (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-        r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - Copia - '
-         r'Copia.xlsx'),
-        # xlsx_path_2024
-        (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-         r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - resprovados - '
-         r'Copia - Copia.xlsx')
-    ]
+
     for idx, path in enumerate(xlsx_paths):
         main(path)
-        update_xlsx(path, xlsx_paths_copy[idx])
         send_emails_from_excel(path)
 

@@ -25,8 +25,6 @@ import re
 import zipfile
 
 
-
-
 class Robo:
     def __init__(self):
         """
@@ -162,7 +160,7 @@ class Robo:
 
     # Pesquisa o termo de fomento listado na planilha e executa download e transferência caso exista algúm.
     def loop_de_pesquisa(self, numero_processo: str, caminho_pasta: str, pasta_download: str, err: list=None,
-                         pg: int=0):
+                         pg: int=0, is_recursive_call: bool =False):
         """
             Executa as etapas de pesquisa para um número de processo específico.
 
@@ -269,7 +267,7 @@ class Robo:
             return str(zip_path)
 
         # Baixa os PDF's da tabela HTML
-        def baixa_pdf_exec(pg, end=False):
+        def baixa_pdf_exec(pg):
             """
                     Baixa os arquivos PDF presentes em uma tabela HTML.
 
@@ -290,8 +288,6 @@ class Robo:
                 print(f'💾📁 Baixando os arquivos do processo {numero_processo}.')
 
                 for pagina in range(1, paginas + 1):
-                    if end:
-                        break
                     try:
                         if pg > pagina:
                             print('🌀📄 pulando página')
@@ -321,8 +317,6 @@ class Robo:
                                 if indice <= err[pagina - 1][-1]:
                                     print(f'⏭️ pulando linha: {indice}')
                                     continue
-                            if end:
-                                break
                             try:
                                 botao_download = linha.find_element(By.CLASS_NAME, 'buttonLink')
                                 if botao_download:
@@ -337,11 +331,13 @@ class Robo:
 
                                     self.driver.back()
                                     self.consulta_instrumento()
-                                    end = self.loop_de_pesquisa(numero_processo=numero_processo,
+
+                                    return self.loop_de_pesquisa(numero_processo=numero_processo,
                                                           caminho_pasta=caminho_pasta,
                                                           pasta_download=pasta_download,
                                                           err=err,
                                                           pg=pagina,
+                                                          is_recursive_call= True
                                                           )
                                 except Exception as error:
                                     exc_type, exc_value, exc_tb = sys.exc_info()
@@ -411,17 +407,19 @@ class Robo:
                 else:
                     # Volta para a aba de consulta (começo do loop) caso não tenha lista de execução
                     self.webdriver_element_wait('/html[1]/body[1]/div[3]/div[2]/div[6]/a[2]').click()
+                if not is_recursive_call:
+                    # espera os downloads terminarem
+                    self.espera_completar_download(pasta_download=pasta_download)
+                    # Transfere os arquivos baixados para a pasta com nome do processo referente
+                    self.transfere_arquivos(caminho_pasta, pasta_download)
+                    # Zipa os arquivos da pasta recém criada
+                    zip_all_files_in_folder(folder_path=caminho_pasta)
 
-                # espera os downloads terminarem
-                self.espera_completar_download(pasta_download=pasta_download)
-                # Transfere os arquivos baixados para a pasta com nome do processo referente
-                self.transfere_arquivos(caminho_pasta, pasta_download)
-                # Zipa os arquivos da pasta recém criada
-                zip_all_files_in_folder(folder_path=caminho_pasta, )
+                    print(
+                        f"\n{Fore.GREEN}✅ Loop de pesquisa concluído para o processo:"
+                        f" {numero_processo}{Style.RESET_ALL}\n")
 
-                print(
-                    f"\n{Fore.GREEN}✅ Loop de pesquisa concluído para o processo:"
-                    f" {numero_processo}{Style.RESET_ALL}\n")
+                    return True
 
                 return True
 
@@ -631,7 +629,6 @@ class Robo:
                 doc.close()
                 # Replace the original file
                 os.replace(temp_pdf, newest_pdf)
-                print(f"✅ PDF '{newest_pdf.name}' foi cortado com sucesso (arquivo substituído).")
             except Exception as e:
                 exc_type, exc_value, exc_tb = sys.exc_info()
                 print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
@@ -756,11 +753,11 @@ class Robo:
                             botao_detalhar = linha.find_element(By.CLASS_NAME, 'buttonLink')
                             botao_detalhar.click()
 
-                            # Baixa arquivos da lista de respostas
-                            baixa_respostas()
-
                             # Print page and handle subsequent actions
                             self.print_page(pasta_download=pasta_download, pdf_path=unique_pdf_path,)
+
+                            # Baixa arquivos da lista de respostas
+                            baixa_respostas()
 
                             # Use explicit wait for the final button
                             self.driver.execute_script(
@@ -989,7 +986,7 @@ class Robo:
 
                 # Verirfica o tamanho do nome do arquivo para que não dê erro de transferência
                 if len(base) > 80:
-                    novo_nome = f'Documento ({cont})'
+                    novo_nome = f'{base[:70]} ({cont})'
                     novo_nome = novo_nome + '.' + ext
                     new_filepath = os.path.join(pasta_download, novo_nome)
                     try:
@@ -999,7 +996,7 @@ class Robo:
                         print(f"Error renaming '{nome_arq}': {e}")
                         return None  # Or handle the error differently
                 else:
-                    novo_nome = base.replace(' ', '').strip()
+                    novo_nome = base.strip()
                     novo_nome = novo_nome + '.' + ext
                     new_filepath = os.path.join(pasta_download, novo_nome)
                     try:
@@ -1324,16 +1321,17 @@ def main() -> None:
     robo.consulta_instrumento()
 
     inicio_range = 0
-    max_linha = 30
+    max_linha = 200
 
-    done_set = set()
+    to_redo_list = ['943393']
+
+
 
     for indice in range(inicio_range, max_linha):
         eta()
-        if numero_processo[indice] in done_set:
-            continue
-
         if situacional[indice] != '':
+            continue
+        if numero_processo[indice] not in to_redo_list:
             continue
         try:
             # Cria pasta com número do processo
