@@ -1,21 +1,22 @@
 import os.path
+import shutil
 import time
 import sys
-import json
 import re
 import unicodedata
+import logging.handlers
+import logging
 
 import pandas as pd
 import numpy as np
 
 import requests
 
+from datetime import datetime
+
 from pandas import ExcelWriter
 
-from typing import List
-
 from colorama import  Fore
-from selenium.webdriver.common.devtools.v138.dom import get_attributes
 
 from thefuzz import process, fuzz
 
@@ -30,8 +31,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver import ActionChains
 
+class BreakInnerLoop(Exception):
+    pass
 
 class Robo:
+    # Chama a função do webdriver com wait element to be clickable
     def __init__(self):
         """
         Inicializa o objeto Robo, configurando e iniciando o driver do Chrome.
@@ -48,6 +52,9 @@ class Robo:
                 options=self.chrome_options)
             self.driver.switch_to.window(self.driver.window_handles[0])
 
+            # Defines Logger
+            self.logger = self.setup_logger()
+
             print("✅ Conectado ao navegador existente com sucesso.")
         except WebDriverException as e:
             # Imprime mensagem de erro se a conexão falhar
@@ -55,8 +62,6 @@ class Robo:
             # Define o driver como None em caso de falha na conexão
             self.driver = None
 
-
-    # Chama a função do webdriver com wait element to be clickable
     def webdriver_element_wait(self, xpath: str):
         """
                 Espera até que um elemento web esteja clicável, usando um tempo limite máximo de 3 segundos.
@@ -76,6 +81,53 @@ class Robo:
         except Exception as e:
             raise e
 
+
+    # Set's up logger
+    def setup_logger(self, level=logging.INFO):
+        log_file_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                         r'Social\SNEAELIS - Robô PAD')
+
+        # Create logs directory if it doesn't exist
+        log_file_name = f'log_PAD_{datetime.now().strftime('%d_%m_%Y')}.log'
+
+        # Sends to specific directory
+        log_file = os.path.join(log_file_path, log_file_name)
+
+        if not os.path.exists(log_file_path):
+            os.makedirs(log_file_path)
+            print(f"✅ Directory created/verified: {log_file_path}")
+
+        logger = logging.getLogger()
+        logger.setLevel(level)
+
+        formatter = logging.Formatter(
+            '%(asctime)s | | %(message)s',
+            datefmt='%Y-%m-%d  %H:%m'
+        )
+        og_format = formatter.format
+        formatter.format = lambda record: og_format(record) + '\n' + '─' * 100
+
+        # File handler with rotation
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=10485760,
+            backupCount=5,
+            encoding='utf-8'
+        )
+        file_handler.setFormatter(formatter)
+
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+
+        if os.path.exists(log_file):
+            print(f"🎉 SUCCESS! Log file created at: {log_file}")
+            print(f"📊 File size: {os.path.getsize(log_file)} bytes")
+            return logger
+        else:
+            print(f"❌ File not created at: {log_file}")
 
     # Navega até a página de busca da proposta
     def consulta_proposta(self):
@@ -115,14 +167,19 @@ class Robo:
     def campo_pesquisa(self, numero_processo):
         try:
             # Seleciona campo de consulta/pesquisa, insere o número de proposta/instrumento e da ENTER
+            self.driver.refresh()
             campo_pesquisa = self.webdriver_element_wait('//*[@id="consultarNumeroProposta"]')
             campo_pesquisa.clear()
             campo_pesquisa.send_keys(numero_processo)
             campo_pesquisa.send_keys(Keys.ENTER)
-
-            # Acessa o item proposta/instrumento
-            acessa_item = self.webdriver_element_wait('//*[@id="tbodyrow"]/tr/td[1]/div/a')
-            acessa_item.click()
+            try:
+                # Acessa o item proposta/instrumento
+                acessa_item = self.webdriver_element_wait('//*[@id="tbodyrow"]/tr/td[1]/div/a')
+                acessa_item.click()
+            except Exception as e:
+                print(f' Processo número: {numero_processo}, não encontrado. Erro: {type(e).__name__}')
+                self.logger.info(f'Processo número: {numero_processo}, não encontrado')
+                raise BreakInnerLoop
         except Exception as e:
             print(f' Falha ao inserir número de processo no campo de pesquisa. Erro: {type(e).__name__}')
 
@@ -142,6 +199,7 @@ class Robo:
 
             cnjp_web = self.webdriver_element_wait('//*[@id="txtCNPJ"]').text
             if cnpj_xlsx != cnjp_web:
+                self.logger.info(f'CNPJ{cnjp_web}, incompatível com o CNPJ da planilha{cnpj_xlsx}')
                 raise ValueError("CNPJ incompatível entre site e planilha")
 
             endereco = self.webdriver_element_wait('//*[@id="txtEndereco"]').text
@@ -163,6 +221,8 @@ class Robo:
                     print("No match found!")
 
             return endereco, cep, cod_municipio
+        except TimeoutException:
+            raise BreakInnerLoop
         except Exception as e:
             exc_type, exc_value, exc_tb = sys.exc_info()
             print(f"Error occurred at line: {exc_tb.tb_lineno}")
@@ -350,6 +410,7 @@ class Robo:
 
         # Inicia o processo de consulta do instrumento
         try:
+            self.logger.info(f'Processo: {numero_processo} ──> Despesa:{tipo_desp}  ──> Items: {len(df)}')
             status_df = pd.read_excel(caminho_arquivo_fonte, dtype=str, sheet_name='Status')
 
             # Pesquisa pelo processo
@@ -378,14 +439,13 @@ class Robo:
                 if btn_incluir.get_attribute("value") == 'Incluir':
                     btn_incluir.click()
                 else:
-                    log_fechados = (
-                        r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                        r'Social\SNEAELIS - Robô PAD\lista_pad_fechados.json')
-                    self.salva_progresso(arquivo_log=log_fechados, nome_arquivo=numero_processo)
-                    return False
+                    self.consulta_proposta()
+                    raise BreakInnerLoop
             except Exception:
-                print(f'Botão de incluir não localizado, pulando processo: {numero_processo}')
-                return
+                self.logger.info(f'Botão de incluir não localizado, pulando processo: {numero_processo}')
+                print(f'🔘)💤 Botão de incluir não localizado, pulando processo: {numero_processo}')
+                self.consulta_proposta()
+                raise BreakInnerLoop
 
             lista_campos = [
                 # [0] Descrição do item
@@ -415,7 +475,7 @@ class Robo:
                 print(f"Preenchendo item nº:{idx} {str(row.iloc[2])}\n".center(50))
                 try:
                     # Descrição do item
-                    desc_item_txt = str(row.iloc[2]) + '\n' + str(row[3])
+                    desc_item_txt = str(row.iloc[2]) + ': ' + str(row[3])
                     desc_item_txt = sanitize_txt(desc_item_txt)
                     desc_item = self.webdriver_element_wait(lista_campos[0])
                     desc_item.clear()
@@ -449,20 +509,16 @@ class Robo:
                     un_forn_field.send_keys(un_fornecimento)
 
                     # Valor Total
-                    valor_total = str(row.iloc[24])
+                    valor_total = (row.iloc[24])
                     if pd.isna(valor_total) or valor_total == 'nan' or valor_total == 'N/A':
                         print('Valor não encontrado ou igual a zero\n')
                         continue
-
-                    if '.' in valor_total:
-                        if len(valor_total.split('.')[-1]) == 1:
-                            valor_total = valor_total + "0"
-                    else:
-                        valor_total = valor_total + "00"
+                    valor_total_rd = round(float(valor_total), 2)
+                    formated_value = f'{valor_total_rd:.2f}'
 
                     valor_total_field = self.webdriver_element_wait(lista_campos[3])
                     valor_total_field.clear()
-                    valor_total_field.send_keys(valor_total)
+                    valor_total_field.send_keys(formated_value)
 
                     # Quantidade
                     qtd = str(row.iloc[9])
@@ -534,6 +590,7 @@ class Robo:
             print(f'❌ Falha ao tentar incluir documentos. Erro:{type(erro).__name__}\n'
                   f'{str(erro)[:100]}...')
             self.consulta_proposta()
+            raise BreakInnerLoop
 
 
     # Finds which locator to use
@@ -591,51 +648,6 @@ class Robo:
             print(f"🤷‍♂️❌ Erro ao ler o arquivo excel: {os.path.basename(caminho_arquivo_fonte)}.\n"
                   f"Nome erro: {type(e).__name__}\nErro: {str(e)[:100]}")
 
-
-    # Salva o progresso em um arquivo json
-    def salva_progresso(self, arquivo_log: str, nome_arquivo: str):
-        """
-        Salva o progresso atual em um arquivo JSON.
-        :param arquivo_log: Endereço do arquivo JSON.
-        :param nome_arquivo: O nome do processo que foi executado.
-        """
-
-        # Carrega os dados antigos
-        lista_arquivos = self.carrega_progresso(arquivo_log=arquivo_log)
-
-        # Verifica se o arquivo já está na lista para evitar duplicatas
-        if nome_arquivo not in lista_arquivos:
-            lista_arquivos.append(nome_arquivo)
-
-        with open(arquivo_log, 'w', encoding='utf-8') as arq:
-            json.dump(lista_arquivos, arq, indent=4, ensure_ascii=False)
-        print("💾 Progresso salvo")
-
-
-    # Carrega os dados do arquivo JSON que sereve como Cartão de Memória
-    def carrega_progresso(self, arquivo_log: str) -> List[str]:
-        """
-            Carrega o progresso do arquivo JSON.
-            :param arquivo_log: Endereço do arquivo JSON
-            :return: Uma lista de nomes de arquivos. Se o arquivo não existir,
-             estiver vazio ou inválido, retorna uma lista vazia.
-        """
-        if not os.path.exists(arquivo_log):
-            return []
-
-        try:
-            with open(arquivo_log, 'r', encoding='utf-8') as arq:
-                dados = json.load(arq)
-                # Garante que o conteúdo seja uma lista
-                if isinstance(dados, list):
-                    return dados
-                else:
-                    return []
-        except (json.JSONDecodeError, FileNotFoundError):
-            # Retorna uma lista vazia em caso de erro na leitura do arquivo
-            return []
-
-
     # Corrige o número da proposta que vem na planilha
     def fix_prop_num(self,numero_proposta):
         if '_' in numero_proposta:
@@ -679,40 +691,28 @@ class Robo:
             print(f"\n‼️ Erro fatal ao inserir PAD: {type(e).__name__}\nErro == {str(e)[:100]}")
             sys.exit("Parando o programa.")
 
-    def create_pad_file(self, dir_path: str) -> bool:
+    def delete_path(self, path:str):
         """
-        Creates a file named 'PAD Feito.txt' in the specified directory.
-
-        Args:
-            dir_path (str): The path to the directory where the file will be created.
-
-        Returns:
-            bool: True if file creation was successful, False otherwise.
+        Deletes a file or directory.
+        - If it's a file → delete the file.
+        - If it's a directory → delete the entire directory tree.
         """
-        try:
-            # Ensure the directory path ends with a separator
-            directory_path = os.path.normpath(dir_path, )
+        if not os.path.exists(path):
+            print(f"⚠️ Path not found: {path}")
+            return
 
-            # Create full file path
-            file_path = os.path.join(directory_path, "PAD Feito.txt")
+        if os.path.isfile(path):
+            os.remove(path)
 
-            # Check if directory exists, create it if it doesn't
-            if not os.path.exists(directory_path):
-                os.makedirs(directory_path)
+            print(f"🗑️ File deleted: {path}")
+        elif os.path.isdir(path):
+            shutil.rmtree(path)
+            print(f"🗑️ Directory deleted: {path}")
+        else:
+            print(f"⚠️ Unknown type (not file/dir): {path}")
 
-            # Create or overwrite the file
-            with open(file_path, 'w') as f:
-                f.write("")
-            return True
-
-        except Exception as e:
-            print(f"Error creating file: {str(e)[:100]}")
-            return False
 
 def main() -> None:
-    # Caminho do arquivo JSON que serve como catão de memória
-    arquivo_log = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                   r'Social\SNEAELIS - Robô PAD\lista_exec_pad.json')
     # Caminho do arquivo .xlsx que contem os dados necessários para rodar o robô
     dir_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
                 r'Social\SNEAELIS - Robô PAD')
@@ -727,11 +727,13 @@ def main() -> None:
     for root, dirs, files in os.walk(dir_path):
         for filename in files:
             if filename.endswith('.xlsx'):
-                lista_arq_exec = robo.carrega_progresso(arquivo_log)
-                if filename in lista_arq_exec:
-                    continue
+                if root == dir_path:
+                    path = os.path.join(root, filename)
+                else:
+                    path = root
                 caminho_arquivo_fonte = os.path.join(root, filename)
-                print(f"\n{'⚡' * 3}🚀 EXECUTING FILE: {filename} 🚀{'⚡' * 3}".center(70, '='), '\n')
+                print(f"\n{'⚡' * 3}🚀 EXECUTING FILE: {filename} 🚀{'⚡' * 3}".center(70, '=')
+                      , '\n')
 
                 # Referência para o código de natureza da despesa
                 cod_natureza_despesa = {
@@ -746,12 +748,13 @@ def main() -> None:
                     'material_esportivo': '33903014',
                     'identidades/divulgações': '33903963',
                     'identidades': '33903963',
-                    'divulgações': '33903963'
+                    'divulgações': '33903963',
+                    'tributo': '33904718'
                 }
 
                 # DataFrame do arquivo excel
                 df = robo.extrair_dados_excel(caminho_arquivo_fonte=caminho_arquivo_fonte)
-                
+
                 try:
                     pd.read_excel(caminho_arquivo_fonte, dtype=str, sheet_name='Status')
                     print(f'Sheet found!')
@@ -775,8 +778,6 @@ def main() -> None:
 
                 cnpj_xlsx = df.loc[df[0] == 'CNPJ:', 1].iloc[0]
 
-                robo_certo = False
-
                 unique_values = []
                 unique_values_col_b = df[1].unique()
                 # first occurrence index
@@ -786,6 +787,7 @@ def main() -> None:
                     val = str(val).lower()
                     unique_values.append(val)
 
+                status_df = pd.read_excel(caminho_arquivo_fonte, dtype=str, sheet_name='Status')
                 for value in unique_values:
                     try:
                         if value == 'eventos' or value == 'alimentação':
@@ -798,8 +800,18 @@ def main() -> None:
 
                         if grouped_df.empty:
                             continue
+                        for idx, row in grouped_df.iterrows():
+                            # Lê a planilha guia, com marcação dos itens já feitos
+                            # Verifica se alguma linha já foi executada
+                            if status_df.iloc[idx, 1] == 'feito':
+                                print(f'Linha {idx} já executada. Pulando linha\n')
+                                continue
+                            else:
+                                break
+                        else:
+                            continue
 
-                        robo_certo = robo.loop_de_pesquisa(df=grouped_df,
+                        robo.loop_de_pesquisa(df=grouped_df,
                                                   numero_processo=numero_processo,
                                                   tipo_desp=value,
                                                   cod_natur_desp=robo.map_cod_natur_desp(
@@ -809,11 +821,9 @@ def main() -> None:
                                                   cnpj_xlsx=cnpj_xlsx,
                                                   caminho_arquivo_fonte = caminho_arquivo_fonte
                                                   )
-                        # Check the possibility of filling the webform if the element to that allow
-                        # filling it is not present goes to the next file on execution line
-                        if not robo_certo:
-                            break
-
+                    except BreakInnerLoop:
+                        print("⚠️ Stopping this unique_values loop early.")
+                        break
                     except KeyboardInterrupt:
                         print("Script stopped by user (Ctrl+C). Exiting cleanly.")
                         sys.exit(0) # Exit gracefully
@@ -822,20 +832,26 @@ def main() -> None:
                         print(f"Error occurred at line: {exc_tb.tb_lineno}")
                         print(f"❌ Falha ao executar script. Erro: {type(e).__name__}\n{str(e)[:100]}")
                         sys.exit(0)  # Exit gracefully
+                else:
+                    robo.logger.info(f'Sucesso em adicionar o PAD, deletando arquivo {path}')
+                    robo.delete_path(path)
 
-                if robo_certo:
-                    robo.salva_progresso(arquivo_log=arquivo_log, nome_arquivo=filename)
-                    robo.create_pad_file(os.path.join(root))
 
 
 if __name__ == "__main__":
-    start_time = time.time()
 
     main()
 
-    end_time = time.time()
-    tempo_total = end_time - start_time
-    horas = int(tempo_total // 3600)
-    minutos = int((tempo_total % 3600) // 60)
-    segundos = int(tempo_total % 60)
-    print(f'⏳ Tempo de execução: {horas}h {minutos}m {segundos}s')
+    r""" for i in range(20):
+        cycle_start = time.time()
+        print(f"\n{'=' * 50}")
+        print(f"🔄 CYCLE {i + 1}/20 started at: {datetime.now().strftime('%H:%M:%S')}")
+        print(f"{'=' * 50}")
+
+        main()
+
+        cycle_time = time.time() - cycle_start
+
+        print(f"\n⏱️ Cycle {i + 1} took: {cycle_time / 60:.2f} minutes")
+        time.sleep(1600)"""
+

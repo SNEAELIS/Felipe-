@@ -1,9 +1,18 @@
+import logging.handlers
+import subprocess
+import fitz  # PyMuPDF
+import io
+from PIL import Image
+from pdf2image import convert_from_path
+import img2pdf
+from PIL import Image
 import numpy as np
+import logging
 import io
 import pdfplumber
 import base64
 from PyPDF2 import PdfReader, PdfWriter
-from jmespath.ast import or_expression
+import requests
 from selenium.webdriver.chrome.options import Options
 from selenium import webdriver
 from selenium.common import WebDriverException, TimeoutException, NoSuchElementException
@@ -536,30 +545,33 @@ def search_google():
 
 if __name__ == "__main__":
     func = int(input("Choose a function: "))
-    # 1
-    # 2 CGAC separet nuclei
-    # 3 PDF to EXCEL CGAC
-    # 4 Convert html to pdf (emendas_pix)
-    # 5 Fix for input robot pareceres_emendas_pix
-    # 6
-    # 7
-    # 8
-    # 9 Fake robo
-    # 10 Verify analise_custos_print
-    # 11 Compare result v expectations
-    # 12
+
+
     if func == 1:
         concatenate_excel_files()
+
+
+    # split the nucleai on the dir into subdirs
     elif func == 2:
         separate_nuclei()
+
+
+    # .pdf to .xlsx
     elif func == 3:
         pdf_to_xlsx()
+
+
+    # Convert to .pdf from .html
     elif func == 4:
         root_dir = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
                     r'Social\Teste001\Sofia\Pareceres_SEi')
         convert_all_html_files(root_directory=root_dir)
+
+
     elif func == 5:
         split_parecer()
+
+
     elif func == 6:
         set_txt = set()
         text = '''927336_TERMO DE FOMENTO
@@ -584,73 +596,206 @@ if __name__ == "__main__":
             else:
                 set_txt.add(txt.split('/')[0])
         print(set_txt)
+
+
+    # confere os pads com time.sleep
     elif func == 7:
-        def main() -> None:
-            def extrair_dados_excel(caminho_arquivo_fonte):
+        class Robo:
+            def webdriver_element_wait(self, xpath: str):
+                """
+                        Espera até que um elemento web esteja clicável, usando um tempo limite máximo de 3 segundos.
+
+                        Args:
+                            xpath: O seletor XPath do elemento.
+
+                        Returns:
+                            O elemento web clicável, ou lança uma exceção TimeoutException se o tempo limite for atingido.
+
+                        Raises:
+                            TimeoutException: Se o elemento não estiver clicável dentro do tempo limite.
+                        """
+                # Cria uma instância de WebDriverWait com o driver e o tempo limite e espera o elemento ser clicável
                 try:
-                    data_frame = pd.read_excel(caminho_arquivo_fonte, dtype=str, header=None, sheet_name=0)
-
-                    return data_frame
+                    return WebDriverWait(self.driver, 8).until(
+                        EC.element_to_be_clickable((By.XPATH, xpath)))
                 except Exception as e:
-                    print(f"🤷‍♂️❌ Erro ao ler o arquivo excel: {os.path.basename(caminho_arquivo_fonte)}.\n"
-                          f"Nome erro: {type(e).__name__}\nErro: {str(e)[:100]}")
+                    raise e
 
-            # Caminho do arquivo .xlsx que contem os dados necessários para rodar o robô
-            dir_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                        r'Social\SNEAELIS - Robô PAD\25869-2025_gustavo')
+            # Chama a função do webdriver com wait element to be clickable
+            def __init__(self):
+                """
+                Inicializa o objeto Robo, configurando e iniciando o driver do Chrome.
+                """
+                try:
+                    # Configuração do registro
+                    # Inicia as opções do Chrome
+                    self.chrome_options = webdriver.ChromeOptions()
+                    # Endereço de depuração para conexão com o Chrome
+                    self.chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
+                    # Inicializa o driver do Chrome com as opções e o gerenciador de drivers
+                    self.driver = webdriver.Chrome(
+                        service=Service(ChromeDriverManager().install()),
+                        options=self.chrome_options)
+                    self.driver.switch_to.window(self.driver.window_handles[0])
 
-            for root, dirs, files in os.walk(dir_path):
-                for filename in files:
-                    if filename.endswith('.xlsx'):
-                        caminho_arquivo_fonte = os.path.join(root, filename)
-                        print(f"\n{'⚡' * 3}🚀 EXECUTING "
-                              f"FILE: {filename} 🚀{'⚡' * 3}".center(70, '='), '\n')
+                    print("✅ Conectado ao navegador existente com sucesso.")
+                except WebDriverException as e:
+                    # Imprime mensagem de erro se a conexão falhar
+                    print(f"❌ Erro ao conectar ao navegador existente: {e}")
+                    # Define o driver como None em caso de falha na conexão
+                    self.driver = None
+
+            # Navega até a página de busca da proposta
+            def consulta_proposta(self):
+                """
+                       Navega pelas abas do sistema até a página de busca de processos.
+
+                       Esta função clica nas abas principal e secundária para acessar a página
+                       onde é possível realizar a busca de processos.
+                       """
+                # Reseta para página inicial
+                try:
+                    reset = self.webdriver_element_wait('//*[@id="header"]')
+                    if reset:
+                        img = reset.find_element(By.XPATH, '//*[@id="logo"]/a/img')
+                        action = ActionChains(self.driver)
+                        action.move_to_element(img).perform()
+                        reset.find_element(By.TAG_NAME, 'a').click()
+                        # print(Fore.MAGENTA + "\n✅ Processo resetado com sucesso !")
+                except NoSuchElementException:
+                    print('Já está na página inicial do transferegov discricionárias.')
+                except Exception as e:
+                    print(Fore.RED + f'🔄❌ Falha ao resetar.\nErro: {type(e).__name__}\n{str(e)[:50]}')
+
+                # [0] Excução; [1] Consultar Proposta
+                xpaths = ['//*[@id="menuPrincipal"]/div[1]/div[3]',
+                          '//*[@id="contentMenu"]/div[1]/ul/li[2]/a'
+                          ]
+                try:
+                    for idx in range(len(xpaths)):
+                        self.webdriver_element_wait(xpaths[idx]).click()
+                    # print(f"{Fore.MAGENTA}✅ Sucesso em acessar a página de busca de processo{Style.RESET_ALL}")
+                except Exception as e:
+                    print(Fore.RED + f'🔴📄 Instrumento indisponível. \nErro: {e}')
+                    sys.exit(1)
+
+            def campo_pesquisa(self, numero_processo):
+                try:
+                    # Seleciona campo de consulta/pesquisa, insere o número de proposta/instrumento e da ENTER
+                    campo_pesquisa = self.webdriver_element_wait('//*[@id="consultarNumeroProposta"]')
+                    campo_pesquisa.clear()
+                    campo_pesquisa.send_keys(numero_processo)
+                    campo_pesquisa.send_keys(Keys.ENTER)
+
+                    # Acessa o item proposta/instrumento
+                    acessa_item = self.webdriver_element_wait('//*[@id="tbodyrow"]/tr/td[1]/div/a')
+                    acessa_item.click()
+                except Exception as e:
+                    print(
+                        f' Falha ao inserir número de processo no campo de pesquisa. Erro: {type(e).__name__}')
 
 
-                        # Referência para o código de natureza da despesa
+            def nav_plano_act_det(self):
+                time.sleep(1)
+                try:
+                    print(f'🚢 Navegando para o plano de ação detalhado:'.center(50, '-'), '\n')
+                    # Aba Plano de trabalho
+                    self.webdriver_element_wait('//*[@id="div_997366806"]').click()
 
-                        # DataFrame do arquivo excel
-                        df = extrair_dados_excel(caminho_arquivo_fonte=caminho_arquivo_fonte)
+                    # Seleciona Plano de Aplicação Detalhado
+                    self.webdriver_element_wait('//*[@id="menu_link_997366806_836661414"]/div').click()
 
-                        unique_values = []
-                        unique_values_col_b = df[1].unique()
-                        # first occurrence index
-                        unique_idx = np.where(unique_values_col_b == 'TIPO')[0][0]
-                        unique_values_temp = unique_values_col_b[unique_idx + 1:]
-                        for val in unique_values_temp:
-                            val = str(val).lower()
-                            unique_values.append(val)
+                except Exception as e:
+                    print(
+                        f"❌ Ocorreu um erro ao executar ao pesquisar Plano de Ação Detalhado: {type(e).__name__}"
+                        f".\n Erro {str(e)[:50]}")
 
-                        for value in unique_values:
-                            try:
-                                if value == 'eventos' or value == 'alimentação':
-                                    continue
-                                grouped_df = df[df[1].str.lower().str.contains(value, na=False)]
 
-                                for idx, row in grouped_df.iterrows():
+            # Loop para adicionar PAD da proposta
+            def loop_de_pesquisa(self, df=None, numero_processo: str=None, tipo_desp: str=None,
+                                 cod_natur_desp: str=None, cnpj_xlsx: str=None,
+                                 caminho_arquivo_fonte: str=None):
 
-                                    qtd = str(row.iloc[24])
-                                    if '.' in qtd:
-                                        qtd_cent = qtd.split('.')[-1]
-                                        if len(qtd_cent) == 1:
-                                            print('has 1 decimal')
-                                            qtd = qtd + "0"
-                                        print('has 2 decimal')
-                                    else:
-                                        print('has 0 decimal')
-                                        qtd = qtd + "00"
+                # Inicia o processo de consulta do instrumento
+                try:
 
-                                    print(qtd, '\n')
-                            except KeyboardInterrupt:
-                                print("Script stopped by user (Ctrl+C). Exiting cleanly.")
-                                sys.exit(0)  # Exit gracefully
-                            except Exception as e:
-                                exc_type, exc_value, exc_tb = sys.exc_info()
-                                print(f"Error occurred at line: {exc_tb.tb_lineno}")
-                                print(f"❌ Falha ao executar script. Erro: {type(e).__name__}\n{str(e)[:100]}")
-                                sys.exit(0)  # Exit gracefully
+                    # Pesquisa pelo processo
+                    self.campo_pesquisa(numero_processo=numero_processo)
+
+                    # Executa pesquisa de anexos
+                    self.nav_plano_act_det()
+                    tab_path = '/html/body/div[3]/div[14]/div[4]/div/div/div/form/div[1]'
+                    WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_element_located((By.XPATH, tab_path)))
+                    #time.sleep(15)
+                    self.consulta_proposta()
+                    return True
+
+                except TimeoutException as t:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f'TIMEOUT {str(t)[:50]}')
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                    self.consulta_proposta()
+                except Exception as erro:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                    print(f'❌ Falha ao tentar incluir documentos. Erro:{type(erro).__name__}\n'
+                          f'{str(erro)[:100]}...')
+                    self.consulta_proposta()
+
+            # Finds which locator to use
+            def find_button_with_retry(self):
+                # Define all possible locator strategies and values
+                locators = [
+                    (By.ID, 'form_submit'),
+                    (By.NAME, 'detalharEsclarecimentoConvenioDadosDoEsclarecimentoVoltarForm'),
+                    (By.XPATH, '//input[@value="Voltar"]'),
+                    (By.XPATH, '//td[@class="FormLinhaBotoes"]/input'),
+                    (By.CLASS_NAME, 'FormLinhaBotoes'),  # Will need additional find after
+                    (By.XPATH, '//input[contains(@onclick, "setaAcao")]'),
+                    (By.XPATH, '//*[@id="form_submit"]')
+                ]
+
+                for locator in locators:
+                    try:
+                        # print(f'Botão localizado com o seletor {locator[0]}')
+                        return self.driver.find_element(*locator)
+                    except Exception as e:
+                        print(f"Falha com localizador {locator}: {str(e)[:80]}")
+                        continue
+
+                raise NoSuchElementException("Could not find button using any locator strategy")
+
+        def main() -> None:
+            l = ['15657/2024']
+
+            try:
+                # Instancia um objeto da classe Robo
+                robo = Robo()
+                # Extrai dados de colunas específicas do Excel
+            except Exception as e:
+                print(f"\n‼️ Erro fatal ao iniciar o robô: {e}")
+                sys.exit("Parando o programa.")
+
+            # inicia consulta e leva até a página de busca do processo
+            robo.consulta_proposta()
+
+            for v in l:
+                try:
+                    robo.loop_de_pesquisa(numero_processo=v)
+                except KeyboardInterrupt:
+                    print("Script stopped by user (Ctrl+C). Exiting cleanly.")
+                    sys.exit(0)  # Exit gracefully
+                except Exception as e:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                    print(
+                        f"❌ Falha ao executar script. Erro: {type(e).__name__}\n{str(e)[:100]}")
+                    sys.exit(0)  # Exit gracefully
 
         main()
+
+
     elif func == 8:
         root_dir = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
                     r'Social\Automações SNEAELIS\Analise_Custos_Exec_Print')
@@ -666,6 +811,9 @@ if __name__ == "__main__":
         print("Subdirectories without PDF files:")
         for folder in no_pdf_folder:
             print(folder)
+
+
+    # Fake long funtion
     elif func == 9:
         class Robo:
             def __init__(self):
@@ -2050,6 +2198,9 @@ if __name__ == "__main__":
         minutos = int((tempo_total % 3600) // 60)
         segundos = int(tempo_total % 60)
         print(f'⏳ Tempo de execução: {horas}h {minutos}m {segundos}s')
+
+
+    # busca dados de quantos arquivos são esperados em cada proposta
     elif func == 10:
         class Robo:
             def __init__(self):
@@ -2290,10 +2441,6 @@ if __name__ == "__main__":
                     # Encontra a tabela de anexos
                     tabela = WebDriverWait(self.driver, 10).until(
                         EC.presence_of_element_located((By.ID, 'esclarecimentos')))
-
-                    # Encontra todas as linhas da tabela
-                    linhas = tabela.find_elements(By.XPATH, './/tbody/tr')
-
                     # Diz quantas páginas tem
                     paginas = self.conta_paginas(tabela)
 
@@ -2306,19 +2453,26 @@ if __name__ == "__main__":
                                 print(f'\nAcessando página {pagina}\n ')
 
                                 # Encontra a tabela na página atual
-                                tabela = WebDriverWait(self.driver, 10).until(
-                                    EC.presence_of_element_located((By.ID, 'esclarecimentos')))
-                                # Encontra todas as linhas da tabela atual
-                                linhas = tabela.find_elements(By.TAG_NAME, 'tr')
+                            tabela = WebDriverWait(self.driver, 3).until(
+                                EC.presence_of_element_located((By.ID, 'esclarecimentos')))
+                            # Encontra todas as linhas da tabela atual
+                            linhas = tabela.find_elements(By.TAG_NAME, 'tr')
+
+                            previous_text = ''
 
                             for indice in range(1, len(linhas)):
+                                indice = int(indice)
                                 try:
                                     # Refresh table and rows reference periodically
-                                    if indice > 1:
-                                        tabela = WebDriverWait(self.driver, 10).until(
+                                    if indice >= 1:
+                                        tabela = WebDriverWait(self.driver, 3).until(
                                             EC.presence_of_element_located((By.ID, 'esclarecimentos')))
                                         linhas = tabela.find_elements(By.TAG_NAME, 'tr')
+
                                     linha = linhas[indice]
+                                    if linha.text.split('\n')[3] == previous_text:
+                                        continue
+
                                     botao_detalhar = linha.find_element(By.CLASS_NAME, 'buttonLink')
                                     botao_detalhar.click()
                                 except Exception as error:
@@ -2515,7 +2669,8 @@ if __name__ == "__main__":
                 return lista_limpa
 
             # Salva o progresso em um arquivo json
-            def salva_progresso(self, processo_visitado: str, indice: int, cont_arq_anexo: int,cont_escl:int):
+            def salva_progresso(self, processo_visitado: str, indice: int, cont_arq_anexo: int,
+                                cont_escl:int, arquivo_log):
                 """
                 Salva o progresso atual em um arquivo JSON.
 
@@ -2525,23 +2680,32 @@ if __name__ == "__main__":
                 :param indice: Diz qual linha o programa iterou por último.
                 """
                 # Carrega os dados antigos
-                arquivo_log = (
-                    r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                    r'Social\Automações SNEAELIS\Analise_Custos_Exec_Print\source\verify_log.json')
-                dados_log = self.carrega_progresso(arquivo_log=arquivo_log)
 
-                # Carrega os dados novos
-                dados_log[processo_visitado] = {
-                    "arquivos_anexo": cont_arq_anexo,
-                    "arquivos_esclarecimento": cont_escl,
-                    "indice": indice
-                }
+                try:
+                    dados_log = self.carrega_progresso(arquivo_log=arquivo_log)
+
+                    if dados_log:
+                        # Carrega os dados novos
+                        dados_log[processo_visitado] = {
+                            "arquivos_anexo": cont_arq_anexo,
+                            "arquivos_esclarecimento": cont_escl,
+                            "indice": indice
+                        }
 
 
-                with open(arquivo_log, 'w', encoding='utf-8') as arq:
-                    json.dump(dados_log, arq, indent=4, ensure_ascii=False)
-                print(f"💾 Processo salvo: {processo_visitado} (Índice: {indice})")
-                print(f"   Arquivos anexo: {cont_arq_anexo}, Esclarecimento: {cont_escl}")
+                        with open(arquivo_log, 'w', encoding='utf-8') as arq:
+                            json.dump(dados_log, arq, indent=4, ensure_ascii=False)
+                        print(f"💾 Processo salvo: {processo_visitado} (Índice: {indice})")
+                        print(f"   Arquivos anexo: {cont_arq_anexo}, Esclarecimento: {cont_escl}")
+                    else:
+                        print(f'Falha ao carregar os arquivos. Retornado {type(dados_log)}')
+                        sys.exit(0)
+                except Exception as e:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+
+                    print(f"\n❌ Erro ao salvar progresso, tipo: {type(e).__name__}\n{str(e)[:100]}")
+
 
             # Carrega os dados do arquivo JSON que sereve como Cartão de Memória
             def carrega_progresso(self, arquivo_log: str):
@@ -2553,8 +2717,27 @@ if __name__ == "__main__":
                     :return: Um dicionário contendo os dados de progresso.
                              Se o arquivo não existir, retorna valores padrão.
                 """
-                with open(arquivo_log, 'r') as arq:
-                    return json.load(arq)
+                try:
+                    if not os.path.exists(arquivo_log):
+                        print("⚠️  Arquivo de log não existe, retornando dict vazio")
+                        return {}
+
+                    with open(arquivo_log, 'r', encoding='utf-8') as arq:
+                        print('Success reading file !')
+                        return json.load(arq)
+                except json.JSONDecodeError as e:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+                    print(f"JSON decode error: {e}")
+                    print(f"Content that failed to parse: {type(e).__name__}\n{str(e)[:100]}")
+                    return None
+
+                except Exception as e:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+                    print(f"Other error tipo: {type(e).__name__}\n{str(e)[:100]}")
+                    return None
+
 
             # Reseta o arquivo JSON
             def reset(self, arquivo_log: str):
@@ -2568,10 +2751,15 @@ if __name__ == "__main__":
                     "processo_visitado": [],
                     "indice": 0
                 }
-                # Salva os dados vazios no arquivo JSON
-                with open(arquivo_log, 'w', encoding='utf-8') as arq:
-                    json.dump(dados_vazios, arq, indent=4)
-
+                try:
+                    # Salva os dados vazios no arquivo JSON
+                    with open(arquivo_log, 'w', encoding='utf-8') as arq:
+                        json.dump(dados_vazios, arq, indent=4)
+                except Exception as e:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(Fore.RED + f"Error occurred at line: {exc_tb.tb_lineno}{Style.RESET_ALL}")
+                    print(f"Other error tipo: {type(e).__name__}\n{str(e)[:100]}")
+                    return None
             # Verifica as condições para mandar um e-mail para o técnico
             def condicao_email(self, numero_processo: str, caminho_pasta: str):
                 """
@@ -2618,9 +2806,10 @@ if __name__ == "__main__":
                 r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
                 r'Social\Automações SNEAELIS\Analise_Custos_Exec_Print\source\RTMA Passivo 2024 - '
                 r'PROJETOS E PROGRAMAS (3) Atualizado em Julho de.2025.xlsx ')
-            # Caminho do arquivo JSON que serve como catão de memória
-            arquivo_log = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                           r'Social\Automações SNEAELIS\Analise_Custos_Exec_Print\source\verify_log.json')
+
+            arquivo_log = (
+                r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                r'Social\Automações SNEAELIS\Analise_Custos_Exec_Print\source\verify_log.json')
 
             try:
                 # Instancia um objeto da classe Robo
@@ -2645,19 +2834,12 @@ if __name__ == "__main__":
             # Pós-processamento dos dados para não haver erros na execução do programa
             numero_processo = robo.limpa_dados(numero_processo)
 
-            # input para reset do arquivo JSON
-            reset = "s"#input('Deseja resetar o robô? s/n: ')
-            if reset.lower() == 's':
-                robo.reset(arquivo_log=arquivo_log)
-
-            # Em caso de parada o programa recomeça da última linha iterada
-            progresso = robo.carrega_progresso(arquivo_log)
             # Inicia o processo de consulta do instrumento
             robo.consulta_instrumento()
 
+            robo.reset(arquivo_log=arquivo_log)
+
             inicio_range = 0
-            if progresso["indice"] > 0:
-                inicio_range = progresso["indice"] + 1
 
             for indice in range(inicio_range, max_linha):
                 if situacional[indice] != '':
@@ -2671,7 +2853,8 @@ if __name__ == "__main__":
                     robo.salva_progresso(indice=indice,
                                          processo_visitado=numero_processo[indice],
                                          cont_arq_anexo=pagina,
-                                         cont_escl=conta_resposta
+                                         cont_escl=conta_resposta,
+                                         arquivo_log=arquivo_log
                                          )
 
                 except Exception as e:
@@ -2683,6 +2866,9 @@ if __name__ == "__main__":
                     continue  # Continua para o próximo processo
 
         main()
+
+
+    # Check files on analise_custos_print
     elif func == 11:
         def conta_arquivo_zip(zip_path: str) -> int:
             try:
@@ -2696,15 +2882,9 @@ if __name__ == "__main__":
             pattern = re.compile(r'\d{2}_\d{2}_\d{4}_\d{1,2}_\d{4}')
             counter_zip = 0
             counter_esc = 0
-            exclud_zip_list = ['1-CoordenadorGeral.zip',
-                               '2-Coordenadoresportivo.zip',
-                               'materias.zip', 'NotasFiscais.zip',
-                               'recibounificado_1-2-3_compressed.zip',
-                               'recibounificado_4-5-6_compressed.zip']
-
 
             for file in os.listdir(dir_path):
-                if file.lower().endswith(".zip") and file not in exclud_zip_list:
+                if file.lower().endswith(".zip") and file.split('.')[0] == os.path.basename(dir_path):
                    counter_zip = conta_arquivo_zip(os.path.join(dir_path, file))
                    continue
                 elif pattern.search(file):
@@ -2788,7 +2968,22 @@ if __name__ == "__main__":
                 r'Social\Automações '
              r'SNEAELIS\Analise_Custos_Exec_Print\source\verify_log.json')
 
+            xlsx_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                r'Social\Automações '
+             r'SNEAELIS\Analise_Custos_Exec_Print\source\RTMA Passivo 2024 - PROJETOS E PROGRAMAS (3) '
+                         r'Atualizado em Julho de.2025.xlsx')
+
             count_diff = 0
+            to_redo_list = []
+
+            df = pd.read_excel(xlsx_path, dtype=str)
+            isnt_num = list()
+            missing_instruments = list()
+
+            for indice, linha in df.iterrows():  # Assume que a primeira linha e um cabeçalho
+                if (linha['SITUACIONAL']) != '':
+                    isnt_num.append(linha['Instrumento nº'])
+
 
             for root, _, files in os.walk(dir_path):
                 for d in _:
@@ -2796,23 +2991,216 @@ if __name__ == "__main__":
                                      json_path=json_path,
                                      json_out_path=json_out_path):
                         count_diff += 1
+                        to_redo_list.append(d)
+                    if d not in isnt_num:
+                        missing_instruments.append(d)
 
-            print(f"\n🔎 Total de diretórios com diferenças: {count_diff}")
+            print(f"\n🔎 Total de diretórios com diferenças: {count_diff}\n\nList to redo:"
+                  f"{to_redo_list}\n\nDid not iterate: {missing_instruments}, {len(missing_instruments)}")
 
 
         main()
+
+
+    # Testing logger funtion
     elif func == 12:
-        folders_to_keep = (929411, 930271, 928313, 927985, 927333, 926260, 926150, 919234)
-        parent_dir = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                      r'Social\Automações SNEAELIS\Analise_Custos_Exec_Print')
+        class TestRoboPAD:
+            def __init__(self):
+                self.logger = self.setup_logger()
+                self.logger.info("🔧 TestRoboPAD instance created")
 
-        for item in os.listdir(parent_dir):
-            item_path = os.path.join(parent_dir, item)
-            new_item = item.split('_')[0]
+            def setup_logger(self, level=logging.INFO):
+                log_file_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                                 r'Social\SNEAELIS - Robô PAD')
 
-            if os.path.isdir(item_path) and item not in folders_to_keep:
-                print(f"Renaming: {item} to {new_item}")
-                new_path = os.path.join(parent_dir, new_item)
+                # Create logs directory if it doesn't exist
+                log_file_name = f'log_PAD_{datetime.now().strftime('%d_%m_%Y')}.log'
 
-                shutil.move(item_path, new_path)
+                # Sends to specific directory
+                log_file = os.path.join(log_file_path, log_file_name)
 
+                if not os.path.exists(log_file_path):
+                    os.makedirs(log_file_path)
+                    print(f"✅ Directory created/verified: {log_file_path}")
+
+                logger = logging.getLogger()
+                logger.setLevel(level)
+
+                formatter = logging.Formatter(
+                    '%(asctime)s | | %(message)s',
+                    datefmt='%Y-%m-%d  %H:%m'
+                )
+                og_format = formatter.format
+                formatter.format = lambda record: og_format(record) + '\n' + '─' * 100
+
+                # File handler with rotation
+                file_handler = logging.handlers.RotatingFileHandler(
+                    log_file,
+                    maxBytes=10485760,
+                    backupCount=5,
+                    encoding='utf-8'
+                )
+                file_handler.setFormatter(formatter)
+
+                console_handler = logging.StreamHandler()
+                console_handler.setFormatter(formatter)
+
+                logger.addHandler(file_handler)
+                logger.addHandler(console_handler)
+
+                if os.path.exists(log_file):
+                    print(f"🎉 SUCCESS! Log file created at: {log_file}")
+                    print(f"📊 File size: {os.path.getsize(log_file)} bytes")
+                    return logger
+                else:
+                    print(f"❌ File not created at: {log_file}")
+
+            def simulate_successful_process(self, process_id):
+                """Simulate a successful process"""
+                self.logger.info(f"🚀 Starting successful process: {process_id}")
+
+                # Simulate steps
+                self.logger.info("📋 Step 1: Validating input data")
+                time.sleep(0.1)  # Simulate work
+
+                self.logger.info("🔍 Step 2: Searching for buttons")
+                time.sleep(0.1)
+
+                self.logger.info("✅ Step 3: Process completed successfully")
+                self.logger.info(f"🎉 Process {process_id} finished")
+
+                return True
+
+            def test_unicode_characters(self):
+                """Test that special characters work"""
+                self.logger.info("🔤 Testing Unicode characters:")
+                self.logger.info("✅ Normal text")
+                self.logger.info("🔘 Button emoji test")
+                self.logger.info("💤 Sleep emoji test")
+                self.logger.info("🚀 Rocket emoji test")
+                self.logger.info("⚠️  Warning emoji test")
+                self.logger.info("💥 Error emoji test")
+                self.logger.info("🎉 Success emoji test")
+
+        test_ = TestRoboPAD()
+        test_.simulate_successful_process(3126516)
+        test_.test_unicode_characters()
+
+
+    # Create directories
+    elif func == 13:
+        # CONFIGURATION
+            # Path to your Excel file
+        xl_file_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                        r'Social\Teste001\Processos Gerar Parecer TF.xlsm')
+            #  Column name for process number
+        precess_col = 'Processo'
+            #  Column name for xxxxxx-xxxx
+        proposal_col = 'Nº Proposta'
+            # Where to create the new directories
+        output_dir_parent = (
+            fr'C:\Users\felipe.rsouza\Documents\fabi')
+            # The directory whose contents are to be copied
+        std_dir_path = [
+            # To copy folder when "Propostas TF"
+            r'C:\Users\felipe.rsouza\Documents\Convênio\29378-2025 - 71000062161202500\Portarias e Parecer '
+            r'Referencial CONJUR',
+            # To copy folder when "Propostas Convênio"
+            r'C:\Users\felipe.rsouza\Documents\Convênio\29378-2025 - 71000062161202500\Portarias e Parecer '
+            r'Referencial CONJUR'
+        ]
+        # SUBDIRECTORIES TO CREATE
+        subdirs = [
+            'Planilha de Custos e Cotações',
+            'Portarias e Parecer Referencial CONJUR',
+            'Requisitos de Celebração'
+        ]
+        sheet_names = ['Propostas TF', 'Propostas Convênio']
+        dir_name_sufix = ['Termo de Fomento', 'Convênio']
+
+        for i, sheet in enumerate(sheet_names):
+            output_dir_path = os.path.join(output_dir_parent, dir_name_sufix[i])
+            df = pd.read_excel(xl_file_path, dtype=str, sheet_name=sheet)
+            replace_ = ['.', '/', '-']
+
+            for idx, row in df.iterrows():
+                process = str(row[precess_col]).strip()
+                for _ in replace_:
+                    process = process.replace(_, '')
+                proposal = str(row[proposal_col]).strip().replace('/','_')
+                main_dir = f'{proposal} - {process}'
+                main_dir_path = os.path.join(output_dir_path, main_dir)
+                os.makedirs(main_dir_path, exist_ok=True)
+
+                for subdir in subdirs:
+                    subdir_path = os.path.join(main_dir_path, subdir)
+                    if subdir == 'Portarias e Parecer Referencial CONJUR':
+                        # Copy the entire source directory structure and files
+                        os.makedirs(subdir_path, exist_ok=True)
+                        shutil.copytree(std_dir_path[i], subdir_path, dirs_exist_ok=True)
+
+                    else:
+                        os.makedirs(subdir_path, exist_ok=True)
+
+        print("Directories created successfully.")
+
+
+    if func == 14:
+        def compress_pdf_fitz(input_path, output_path, dpi=150, quality=80):
+            """
+            Compress PDF using PyMuPDF - no poppler required
+            """
+            # Open the original PDF
+            doc = fitz.open(input_path)
+
+            # Create a new PDF for compressed output
+            writer = fitz.open()
+
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+
+                # Render page as image with specified DPI
+                mat = fitz.Matrix(dpi / 72, dpi / 72)  # Convert DPI to matrix
+                pix = page.get_pixmap(matrix=mat)
+
+                # Convert to bytes and then to PIL Image for compression
+                img_data = pix.tobytes("ppm")
+                pil_img = Image.open(io.BytesIO(img_data))
+
+                # Convert to RGB if necessary
+                if pil_img.mode != 'RGB':
+                    pil_img = pil_img.convert('RGB')
+
+                # Compress image
+                output_buffer = io.BytesIO()
+                pil_img.save(output_buffer, format='JPEG', quality=quality, optimize=True)
+                compressed_img_data = output_buffer.getvalue()
+
+                # Create new page with compressed image
+                new_page = writer.new_page(width=page.rect.width, height=page.rect.height)
+                new_page.insert_image(new_page.rect, stream=compressed_img_data)
+
+            # Save with compression options
+            writer.save(output_path, garbage=4, deflate=True, clean=True)
+
+            doc.close()
+            writer.close()
+
+            # Print compression results
+            original_size = os.path.getsize(input_path)
+            compressed_size = os.path.getsize(output_path)
+            reduction = (1 - compressed_size / original_size) * 100
+
+            print(f"Original: {original_size / 1024 / 1024:.2f} MB")
+            print(f"Compressed: {compressed_size / 1024 / 1024:.2f} MB")
+            print(f"Reduction: {reduction:.1f}%")
+
+
+        input_path = r'C:\Users\felipe.rsouza\Documents\log_PAD\atestado nova resende 1 pag - Copia.pdf'
+
+        output_path = r'C:\Users\felipe.rsouza\Documents\log_PAD\atestado nova resende 1 pag - resized.pdf'
+
+        compress_pdf_fitz(input_path,
+                            output_path,
+                            dpi=120,
+                            quality=80)
