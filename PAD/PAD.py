@@ -98,14 +98,16 @@ class Robo:
             print(f"✅ Directory created/verified: {log_file_path}")
 
         logger = logging.getLogger()
+        if logger.handlers:
+            return logger
+
+        # Avoid adding handlers multiple times
         logger.setLevel(level)
 
         formatter = logging.Formatter(
-            '%(asctime)s | | %(message)s',
-            datefmt='%Y-%m-%d  %H:%m'
+            '%(asctime)s | | %(message)s\n' + '─' * 100,
+            datefmt='%Y-%m-%d  %H:%M'
         )
-        og_format = formatter.format
-        formatter.format = lambda record: og_format(record) + '\n' + '─' * 100
 
         # File handler with rotation
         file_handler = logging.handlers.RotatingFileHandler(
@@ -184,7 +186,7 @@ class Robo:
             print(f' Falha ao inserir número de processo no campo de pesquisa. Erro: {type(e).__name__}')
 
 
-    def  busca_endereco(self, cnpj_xlsx):
+    def  busca_endereco(self, cnpj_xlsx: str, num_prop: str):
         cod_municipio_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
                               r'Assistência Social\Teste001\municipios.xlsx')
         time.sleep(0.5)
@@ -199,7 +201,9 @@ class Robo:
 
             cnjp_web = self.webdriver_element_wait('//*[@id="txtCNPJ"]').text
             if cnpj_xlsx != cnjp_web:
-                self.logger.info(f'CNPJ{cnjp_web}, incompatível com o CNPJ da planilha{cnpj_xlsx}')
+                self.logger.info(f'Proposta número: {num_prop} aprensenta CNPJ {cnjp_web}, incompatível com o CNPJ da '
+                                 f'planilha:'
+                                 f' {cnpj_xlsx}')
                 raise ValueError("CNPJ incompatível entre site e planilha")
 
             endereco = self.webdriver_element_wait('//*[@id="txtEndereco"]').text
@@ -410,14 +414,13 @@ class Robo:
 
         # Inicia o processo de consulta do instrumento
         try:
-            self.logger.info(f'Processo: {numero_processo} ──> Despesa:{tipo_desp}  ──> Items: {len(df)}')
             status_df = pd.read_excel(caminho_arquivo_fonte, dtype=str, sheet_name='Status')
 
             # Pesquisa pelo processo
             self.campo_pesquisa(numero_processo=numero_processo)
 
             # Faz a busca dos dados de localização
-            endereco, cep, cod_municipio = self.busca_endereco(cnpj_xlsx=cnpj_xlsx)
+            endereco, cep, cod_municipio = self.busca_endereco(cnpj_xlsx=cnpj_xlsx, num_prop=numero_processo)
 
             # Executa pesquisa de anexos
             self.nav_plano_act_det()
@@ -467,6 +470,17 @@ class Robo:
             print('📝 Preenchendo PAD'.center(50, '-'), '\n')
 
             for idx, row in df.iterrows():
+                try:
+                    alerta_valor = self.driver.find_element('//*[@id="messages"]/div')
+                    if alerta_valor:
+                        print('⚠️💸 Total do valor da proposta excedeu a contrapartida financeira')
+                        self.logger.info(f'Total do valor da proposta: {numero_processo} excedeu a '
+                                         f'contrapartida financeira')
+                        self.consulta_proposta()
+                        raise BreakInnerLoop
+                except Exception:
+                    pass
+
                 # Lê a planilha guia, com marcação dos itens já feitos
                 # Verifica se alguma linha já foi executada
                 if status_df.iloc[idx, 1] == 'feito':
