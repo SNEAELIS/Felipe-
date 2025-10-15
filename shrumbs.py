@@ -3002,154 +3002,113 @@ if __name__ == "__main__":
         main()
 
 
-    # Testing logger funtion
+    # Compare xlsx files(DFP directories)
     elif func == 12:
-        class TestRoboPAD:
-            def __init__(self):
-                self.logger = self.setup_logger()
-                self.logger.info("🔧 TestRoboPAD instance created")
+        def find_matching_values(old_xlsx, new_xlsx, col1, col2):
+            df1 = pd.read_excel(old_xlsx)
+            df2 = pd.read_excel(new_xlsx)
 
-            def setup_logger(self, level=logging.INFO):
-                log_file_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                                 r'Social\SNEAELIS - Robô PAD')
+            values1 = set(df1[col1].dropna().astype(str))
+            values2 = set(df2[col2].dropna().astype(str))
 
-                # Create logs directory if it doesn't exist
-                log_file_name = f'log_PAD_{datetime.now().strftime('%d_%m_%Y')}.log'
+            # Find matches
+            matches = values1.intersection(values2)
+            only_in_old_xlsx = values1 - values2
+            only_in_new_xlsx = values2 - values1
 
-                # Sends to specific directory
-                log_file = os.path.join(log_file_path, log_file_name)
+            print(f"Total matches: {len(matches)}")
+            print(f"Only in {os.path.basename(old_xlsx)}: {len(only_in_old_xlsx)}")
+            print(f"Only in {os.path.basename(new_xlsx)}: {len(only_in_new_xlsx)}")
 
-                if not os.path.exists(log_file_path):
-                    os.makedirs(log_file_path)
-                    print(f"✅ Directory created/verified: {log_file_path}")
+            # Create a results DataFrame
+            results = pd.DataFrame({
+                'Matches': list(matches),
+                'Only_in_File1': list(only_in_old_xlsx) + [''] * (len(matches) - len(only_in_old_xlsx)),
+                'Only_in_File2': list(only_in_new_xlsx) + [''] * (len(matches) - len(only_in_new_xlsx))
+            })
 
-                logger = logging.getLogger()
-                logger.setLevel(level)
+            return results
 
-                formatter = logging.Formatter(
-                    '%(asctime)s | | %(message)s',
-                    datefmt='%Y-%m-%d  %H:%m'
-                )
-                og_format = formatter.format
-                formatter.format = lambda record: og_format(record) + '\n' + '─' * 100
 
-                # File handler with rotation
-                file_handler = logging.handlers.RotatingFileHandler(
-                    log_file,
-                    maxBytes=10485760,
-                    backupCount=5,
-                    encoding='utf-8'
-                )
-                file_handler.setFormatter(formatter)
+        old_xlsx = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                    r'Social\Teste001\Processos Gerar Parecer TF.xlsm')
+        new_xlsx = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                    r'Social\Teste001\fabi_DFP\Propostas Para Diligências Padrão.xlsm')
 
-                console_handler = logging.StreamHandler()
-                console_handler.setFormatter(formatter)
-
-                logger.addHandler(file_handler)
-                logger.addHandler(console_handler)
-
-                if os.path.exists(log_file):
-                    print(f"🎉 SUCCESS! Log file created at: {log_file}")
-                    print(f"📊 File size: {os.path.getsize(log_file)} bytes")
-                    return logger
-                else:
-                    print(f"❌ File not created at: {log_file}")
-
-            def simulate_successful_process(self, process_id):
-                """Simulate a successful process"""
-                self.logger.info(f"🚀 Starting successful process: {process_id}")
-
-                # Simulate steps
-                self.logger.info("📋 Step 1: Validating input data")
-                time.sleep(0.1)  # Simulate work
-
-                self.logger.info("🔍 Step 2: Searching for buttons")
-                time.sleep(0.1)
-
-                self.logger.info("✅ Step 3: Process completed successfully")
-                self.logger.info(f"🎉 Process {process_id} finished")
-
-                return True
-
-            def test_unicode_characters(self):
-                """Test that special characters work"""
-                self.logger.info("🔤 Testing Unicode characters:")
-                self.logger.info("✅ Normal text")
-                self.logger.info("🔘 Button emoji test")
-                self.logger.info("💤 Sleep emoji test")
-                self.logger.info("🚀 Rocket emoji test")
-                self.logger.info("⚠️  Warning emoji test")
-                self.logger.info("💥 Error emoji test")
-                self.logger.info("🎉 Success emoji test")
-
-        test_ = TestRoboPAD()
-        test_.simulate_successful_process(3126516)
-        test_.test_unicode_characters()
-
+        # Usage
+        results = find_matching_values(old_xlsx, new_xlsx, 'Nº Proposta', 'Nº Proposta')
+        print(results)
 
     # Create directories
     elif func == 13:
-        # CONFIGURATION
-            # Path to your Excel file
-        xl_file_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                        r'Social\Teste001\Processos Gerar Parecer TF.xlsm')
-            #  Column name for process number
-        precess_col = 'Processo'
-            #  Column name for xxxxxx-xxxx
-        proposal_col = 'Nº Proposta'
-            # Where to create the new directories
-        output_dir_parent = (
-            fr'C:\Users\felipe.rsouza\Documents\fabi')
+        root_dir = r'C:\Users\felipe.rsouza\Documents\fabi'
             # The directory whose contents are to be copied
-        std_dir_path = [
-            # To copy folder when "Propostas TF"
-            r'C:\Users\felipe.rsouza\Documents\Convênio\29378-2025 - 71000062161202500\Portarias e Parecer '
-            r'Referencial CONJUR',
-            # To copy folder when "Propostas Convênio"
-            r'C:\Users\felipe.rsouza\Documents\Convênio\29378-2025 - 71000062161202500\Portarias e Parecer '
-            r'Referencial CONJUR'
-        ]
-        # SUBDIRECTORIES TO CREATE
-        subdirs = [
-            'Planilha de Custos e Cotações',
-            'Portarias e Parecer Referencial CONJUR',
-            'Requisitos de Celebração'
-        ]
-        sheet_names = ['Propostas TF', 'Propostas Convênio']
-        dir_name_sufix = ['Termo de Fomento', 'Convênio']
+        std_dir_mapping = {
+            'Termo de Fomento': (
+                r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                r'Social\SNEAELIS - Propostas 1\Termo de Fomento\25448_2025 - 71000057438202574\Portarias e '
+                r'Parecer Referencial CONJUR'),
+            'Convênio': (
+                r'C:\Users\felipe.rsouza\Documents\Convênio\29378-2025 - 71000062161202500\Portarias e Parecer '
+                r'Referencial CONJUR')
+        }
 
-        for i, sheet in enumerate(sheet_names):
-            output_dir_path = os.path.join(output_dir_parent, dir_name_sufix[i])
-            df = pd.read_excel(xl_file_path, dtype=str, sheet_name=sheet)
-            replace_ = ['.', '/', '-']
+        target_folder_name = 'Portarias e Parecer Referencial CONJUR'
 
-            for idx, row in df.iterrows():
-                process = str(row[precess_col]).strip()
-                for _ in replace_:
-                    process = process.replace(_, '')
-                proposal = str(row[proposal_col]).strip().replace('/','_')
-                main_dir = f'{proposal} - {process}'
-                main_dir_path = os.path.join(output_dir_path, main_dir)
-                os.makedirs(main_dir_path, exist_ok=True)
+        # Process each directory type separately
+        for dir_type, std_source in std_dir_mapping.items():
+            type_dir = os.path.join(root_dir, dir_type)
 
-                for subdir in subdirs:
-                    subdir_path = os.path.join(main_dir_path, subdir)
-                    if subdir == 'Portarias e Parecer Referencial CONJUR':
-                        # Copy the entire source directory structure and files
-                        os.makedirs(subdir_path, exist_ok=True)
-                        shutil.copytree(std_dir_path[i], subdir_path, dirs_exist_ok=True)
+            if not os.path.exists(type_dir):
+                print(f"Directory not found: {type_dir}")
+                continue
 
+            # Iterate through all subdirectories of the type directory
+            for main_dir in os.listdir(type_dir):
+                main_dir_path = os.path.join(type_dir, main_dir)
+
+                if os.path.isdir(main_dir_path):
+                    target_folder_path = os.path.join(main_dir_path, target_folder_name)
+
+                    if os.path.exists(target_folder_path):
+                        # Clear the target folder
+                        for filename in os.listdir(target_folder_path):
+                            file_path = os.path.join(target_folder_path, filename)
+                            try:
+                                if os.path.isfile(file_path) or os.path.islink(file_path):
+                                    os.unlink(file_path)
+                                elif os.path.isdir(file_path):
+                                    shutil.rmtree(file_path)
+                            except Exception as e:
+                                print(f'Failed to delete {file_path}. Reason: {e}')
+
+                        # Copy new contents
+                        try:
+                            shutil.copytree(std_source, target_folder_path, dirs_exist_ok=True)
+                            print(f"Successfully updated: {target_folder_path}")
+                        except Exception as e:
+                            print(f"Failed to copy files to {target_folder_path}. Reason: {e}")
                     else:
-                        os.makedirs(subdir_path, exist_ok=True)
+                        print(f"Target folder not found: {target_folder_path}")
 
-        print("Directories created successfully.")
-
-
+        print("Folder substitution completed successfully.")
+    # Compress pdf
     if func == 14:
-        def compress_pdf_fitz(input_path, output_path, dpi=150, quality=80):
+        def compress_pdf_fitz(dir_path, dpi=150, quality=80):
             """
             Compress PDF using PyMuPDF - no poppler required
             """
+
+            for root, dirs, files in os.walk(dir_path):
+                for filename in files:
+                    if filename.endswith('.pdf'):
+                        input_path = os.path.join(root, filename)
+                        print(f"\n{'⚡' * 3}🚀 EXECUTING FILE: {filename} 🚀{'⚡' * 3}".center(70, '=')
+                              , '\n')
+
+                    file_name_output = os.path.basename(filename) + '_compressed' + '.pdf'
+
+                    output_path = os.path.join(root, file_name_output)
             # Open the original PDF
             doc = fitz.open(input_path)
 
@@ -3196,11 +3155,116 @@ if __name__ == "__main__":
             print(f"Reduction: {reduction:.1f}%")
 
 
-        input_path = r'C:\Users\felipe.rsouza\Documents\log_PAD\atestado nova resende 1 pag - Copia.pdf'
+        dir_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                    r'Social\Teste001\pdf_converter')
 
-        output_path = r'C:\Users\felipe.rsouza\Documents\log_PAD\atestado nova resende 1 pag - resized.pdf'
-
-        compress_pdf_fitz(input_path,
-                            output_path,
+        compress_pdf_fitz(dir_path=dir_path,
                             dpi=120,
                             quality=80)
+
+    if func == 15:
+        import dash
+        from dash import dcc, html, Input, Output
+        import plotly.express as px
+        import pandas as pd
+
+        # Sample data: Brazilian cities with lat/lon and population
+        df = pd.DataFrame({
+            'city': ['São Paulo', 'Rio de Janeiro', 'Brasília', 'Salvador', 'Fortaleza'],
+            'lat': [-23.5505, -22.9068, -15.8267, -12.9714, -3.7319],
+            'lon': [-46.6333, -43.1729, -47.9218, -38.5014, -38.5267],
+            'population': [12325232, 6747815, 3055149, 2932920, 2686612]
+        })
+
+        # Initialize Dash app
+        app = dash.Dash(__name__)
+
+        # Layout: PowerBI-like grid
+        app.layout = html.Div([
+            # Header
+            html.H1("Brazil Interactive Map Dashboard",
+                    style={'textAlign': 'center', 'color': '#333', 'marginBottom': 20}),
+
+            # Main grid: Map + Info panel
+            html.Div([
+                # Map (70% width)
+                html.Div([
+                    dcc.Graph(id='map-graph')
+                ], className='col-md-8', style={'padding': 10}),
+
+                # Side panel (30% width)
+                html.Div([
+                    html.H3("City Details", style={'color': '#666'}),
+                    html.Div(id='selected-info', style={'marginTop': 20, 'fontSize': 14})
+                ], className='col-md-4',
+                    style={'backgroundColor': '#f8f9fa', 'padding': 15, 'borderRadius': 5,
+                           'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
+            ], className='row', style={'margin': 0}),
+
+            # CSS (inline for simplicity)
+            dcc.Store(id='intermediate-value')
+        ], style={'fontFamily': 'Segoe UI, sans-serif', 'backgroundColor': '#fff', 'padding': 20})
+
+
+        # Callback for interactivity: Click map marker to update side panel
+        @app.callback(
+            [Output('selected-info', 'children'),
+             Output('intermediate-value', 'data')],
+            [Input('map-graph', 'clickData')]
+        )
+        def update_info(clickData):
+            if clickData:
+                point = clickData['points'][0]
+                city = point['customdata'][0]  # City name
+                pop = point['customdata'][1]  # Population
+                return f"Selected: {city}\nPopulation: {pop:,}", clickData
+            return "Click a city marker on the map!", None
+
+
+        # Callback to render the map
+        @app.callback(
+            Output('map-graph', 'figure'),
+            [Input('intermediate-value', 'data')]
+        )
+        def update_map(data):
+            # Create scattermapbox focused on Brazil
+            fig = px.scatter_mapbox(df,
+                                    lat='lat', lon='lon',
+                                    size='population',  # Bubble size like PowerBI
+                                    color='population',  # Color by value
+                                    hover_name='city',
+                                    size_max=30,
+                                    mapbox_style='open-street-map',  # Free map style
+                                    zoom=3.5,  # Adjusted for Brazil
+                                    center={'lat': -14.2350, 'lon': -51.9253},  # Brazil's center
+                                    custom_data=['city', 'population'])  # For clicks
+
+            # Restrict map to Brazil's bounding box (excludes other countries)
+            fig.update_layout(
+                height=600,
+                margin={'r': 0, 't': 0, 'l': 0, 'b': 0},
+                showlegend=False,
+                mapbox={
+                    'style': 'open-street-map',
+                    'center': {'lat': -14.2350, 'lon': -51.9253},
+                    'zoom': 3.5,
+                    'bounds': {
+                        'west': -73.9872,  # Brazil's western edge
+                        'east': -32.3923,  # Brazil's eastern edge
+                        'north': 5.2719,  # Brazil's northern edge
+                        'south': -33.7507  # Brazil's southern edge
+                    }
+                },
+                clickmode='event+select'
+            )
+
+            return fig
+
+
+        app.run(debug=True, port=8050)
+
+
+    if func == 16:
+        txt_ = (f'Para atendimento integral da diligência inserida na aba "Pareceres" em '
+                f'{datetime.now().strftime("%d/%m/%Y")}.')
+        print(txt_)
