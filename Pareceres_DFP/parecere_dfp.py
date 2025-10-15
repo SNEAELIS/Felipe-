@@ -8,6 +8,7 @@ import pandas as pd
 
 from datetime import datetime
 
+from openpyxl.utils import rows_from_range
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
@@ -106,7 +107,8 @@ class PWRobo:
         except PlaywrightError as pe:
             print(f"❗🧩 Playwright-specific error: {str(pe)[:100]}\nErro name:{type(pe).__name__}")
         except Exception as e:
-            print(f"🚨🚨 An unexpected error occurred: {str(e)[:100]}\nErro name:{type(e).__name__}")
+            print(f"🚨🚨 An unexpected error occurred while initiating search: {str(e)[:100]}\nErro name"
+                  f":{type(e).__name__}")
 
 
     def loop_search(self, prop_num: str):
@@ -127,10 +129,12 @@ class PWRobo:
         except PlaywrightError as pe:
             print(f"❗🧩 Playwright-specific error: {str(pe)[:100]}\nErro name:{type(pe).__name__}")
         except Exception as e:
-            print(f"🚨🚨 An unexpected error occurred: {str(e)[:100]}\nErro name:{type(e).__name__}")
+            print(f"🚨🚨 An unexpected error occurred under loop search: {str(e)[:100]}\nErro name"
+                  f":{type(e).__name__}")
 
 
     def insert_feedback(self, type_txt: int):
+        return True
         try:
             # All form submit in the page
             inserir_btn_all = self.page.locator("xpath=//input[@id='form_submit']").all()
@@ -263,20 +267,46 @@ class PWRobo:
             print(f"❗🧩 Playwright-specific error: {str(pe)[:100]}\nErro name:{type(pe).__name__}")
             return False
         except Exception as e:
-            print(f"🚨🚨 An unexpected error occurred: {str(e)[:100]}\nErro name:{type(e).__name__}")
+            print(f"🚨🚨 An unexpected error occurred at land_page: {str(e)[:100]}\nErro name"
+                  f":{type(e).__name__}")
             return False
 
 
     def requirements(self):
+        threshhold_date = datetime(2025, 10, 8)
+
         txt_ = (f'Para atendimento integral da diligência inserida na aba "Pareceres" em '
                 f'{datetime.now().strftime("%d/%m/%Y")}.')
-        # Select Rquisites
+
+        # Select Requisites
         self.page.click("xpath=//div[@id='div_2144784112']//span//span[contains(text(),'Requisitos')]"
                         , timeout=5000)
-        #
+        # SelectRequisites for celebration
         self.page.click("xpath=//span[contains(text(),'Requisitos para Celebração')]",
                         timeout=5000)
-        #
+
+        # Select Historic table
+        self.page.wait_for_selector("xpath=//div[@id='divFormulario']//div[5]", timeout=5000)
+
+        table_ = self.page.locator("xpath=//div[@id='divFormulario']//div[5]")
+        rows = table_.locator('tr')
+
+        for i in range(1, rows.count()):
+            row = rows.nth(i)
+
+            cells = row.locator('td, th')
+            # Only proceed if we have at least 2 cells
+            if cells.count() >= 2:
+                event_ = cells.nth(0).text_content().strip()
+                date_txt = cells.nth(2).text_content().strip().split()[0]
+                date_obj = datetime.strptime(date_txt, "%d/%m/%Y")
+
+                if event_ == "Complementação Solicitada" and date_obj > threshhold_date:
+                    print('Já existe solicitação de complementação em data posterior à 08/10/2025')
+                    self.logger.info('Já existe solicitação de complementação em data posterior à 08/10/2025')
+                    return
+
+        # Request complementation button
         self.page.click("xpath=//input[@id='formRequisitosDocumentos:_idJsp159']", timeout=5000)
         #
         txt_field = "xpath=//textarea[@id='formSolicitacaComplementacao:observacao']"
@@ -296,7 +326,8 @@ class PWRobo:
             close_button.wait_for(state="visible", timeout=5000)
             close_button.click()
         except Exception as e:
-            print(f"🚨🚨 An unexpected error occurred: {str(e)[:100]}\nErro name:{type(e).__name__}")
+            print(f"🚨🚨 An unexpected error occurred with error message: {str(e)[:100]}\nErro name"
+                  f":{type(e).__name__}")
             self.logger.info('Erro ao solicitar complementação')
             return False
 
@@ -437,148 +468,12 @@ Coordenação-Geral de Formalização de Parcerias
                             robo.init_search()
                     except Exception as e:
                         print(
-                           f"🚨🚨 An unexpected error occurred: {str(e)[:100]}\nErro name:{type(e).__name__}")
+                           f"🚨🚨 An unexpected error occurred during main: {str(e)[:100]}\nErro name"
+                           f":{type(e).__name__}")
 
                 except Exception as e:
-                    print(f"🚨🚨 An unexpected error occurred: {str(e)[:100]}\nErro name:{type(e).__name__}")
-
-        except Exception as e:
-            print(f"🚨🚨 Failed to load or process sheet '{sheet}': {str(e)[:100]} (Error: {type(e).__name__})")
-
-# termo de fomento
-def main2():
-    text_conv = r'''Prezados,
-
-Favor desconsiderar a diligência anterior (08/10/2025), tendo em vista o equívoco relacionado ao link 2. 
-
-Dessa forma, com vistas à celebração da parceria e conforme exigido nas normativas legais vigente, solicitamos o encaminhamento da seguinte documentação:
-
-1. Cópia da LOA (Lei Orçamentária Anual);
-2. Cópia do QDD (Quadro de Detalhamento de Despesa);
-3. Documento que apresente o número da matrícula funcional do Representante Legal; e
-4. Termo de Posse/Nomeação ou Diploma do Representante Legal.
-5. Declarações Consolidadas – Sem prazo de validade (Link 1); e
-6. Declarações Consolidadas – Validade no mês da assinatura (Link 2).
-
-Link 1 – Declarações Consolidadas – Sem prazo de validade:
-https://sneaelis.itech.ifsertaope.edu.br/forms/declaracoes/
-
-Link 2 – Declarações Consolidadas – Validade no mês da assinatura:
-https://homologacao.itech.ifsertaope.edu.br/forms/declaracoes/Validade-declaracao-mes 
-
-Após a inserção integral dessas documentações na aba “Requisitos para Celebração” do Transferegov, o Proponente deverá acionar a opção “Enviar para Análise”, disponível ao final da página.
-
-Cumprida integralmente esta diligência, prosseguiremos com as etapas necessárias para celebração do convênio sob a condição suspensiva, cabendo ao Proponente apresentar o Termo de Referência e documentos correlatos (Projeto Técnico, Cotações e Planilha de Custos) no prazo de 09 (nove) meses a contar da assinatura do instrumento, conforme determina a legislação vigente.
-
-Cabe destacar que, no ato da celebração da parceria, o Proponente deverá estar adimplente junto aos sistemas CAUC e Regularidade Transferegov, no que couber. Caso seja constatado qualquer registro de inadimplência, a celebração da parceria ficará inviabilizada.
-
-Além disso, o Proponente deverá possuir cadastro de usuário externo no Sistema Eletrônico de Informações (SEI) junto ao Ministério do Esporte, para possibilitar a assinatura do instrumento. Caso o Representante Legal ainda não possua cadastro, este deverá ser realizado pelo seguinte link:
-
-https://sei.cidadania.gov.br/sei/controlador_externo.php?acao=usuario_externo_logar&id_orgao_acesso_externo=0 
-
-Após o cadastro, o dirigente da entidade deverá enviar a relação da documentação necessária, por meio do Protocolo Digital do Ministério do Esporte, para fins de ativação do acesso, conforme mensagem automática enviada ao e-mail vinculado ao cadastro.
-
-Observação: Esta é uma mensagem automática. Favor desconsiderar caso a documentação supramencionada tenha sido apresentada integralmente antes da emissão deste Parecer.
-
-Permanecemos à disposição pelo endereço eletrônico: cgfp.sneaelis@esporte.gov.br. 
-
-Atenciosamente,
-
-Coordenação-Geral de Formalização de Parcerias
-
-'''
-
-    text_tf = r'''Prezados,
-
-Ao cumprimentá-los cordialmente e com vistas à celebração da parceria, conforme exigido nas normativas legais vigente, solicitamos o encaminhamento da seguinte documentação:
-
-1. Ata de Eleição do Corpo de Dirigentes atual da Entidade, registrada em Cartório;
-2. Termo de Posse/Nomeação do Representante Legal da Entidade;
-3. Comprovante de Inscrição no CNPJ;
-4. Comprovante de Endereço da Entidade atualizado;
-5. Estatuto Social da Entidade;
-6. Alterações Estatuárias, se for o caso, e Ata que o aprovou, registrados em Cartório;
-7. Certidão Negativa de Débitos Trabalhista – CNDT (Link 1); 
-8. Declarações Consolidadas (Link 2); e
-9. Declaração do art. 26 e 27 (Link 3).
-
-Link 1 – CNDT:
-https://cndt-certidao.tst.jus.br/inicio.faces 
-
-Link 2 - Declarações Consolidadas:
-https://sneaelis.itech.ifsertaope.edu.br/forms/declaracoes/formulario-documentacoes 
-
-Link 3 – Declaração do art. 26 e 27 do Decreto nº 8.726/2016:
-https://sneaelis.itech.ifsertaope.edu.br/forms/declaracoes/formulario-dirigente 
-
-Ressalta-se que a Declaração do art. 26 e 27 (Link 3), deve constar a relação nominal atualizada dos dirigentes da entidade, conforme estabelecido no estatuto, com os dados específicos de cada um deles.
-
-Após a inserção integral dessas documentações na aba “Requisitos para Celebração” do Transferegov, o Proponente deverá acionar a opção “Enviar para Análise”, disponível ao final da página.
-
-Cumprida integralmente esta diligência, prosseguiremos com as etapas necessárias para formalização, conforme determina a legislação vigente.
-
-Cabe destacar que no ato da celebração da parceria, a entidade deverá estar adimplente junto aos sistemas: CAUC, CEIS/CEPIM e Regularidade Transferegov. Caso seja constatado qualquer registro de inadimplência, a celebração da parceria ficará inviabilizada.
-
-Caberá a entidade ainda, atentar-se às vedações dispostas no art. 39, da Lei nº 13.019/2014, especialmente no dever de prestar contas, tendo em vista que se constatado pendência, a celebração da parceria ficará condicionada à devida regularização.
-
-Além disso, o Proponente deverá possuir cadastro de usuário externo no Sistema Eletrônico de Informações (SEI) junto ao Ministério do Esporte, para possibilitar a assinatura do instrumento. Caso o Representante Legal ainda não possua cadastro, este deverá ser realizado pelo seguinte link:
-
-https://sei.cidadania.gov.br/sei/controlador_externo.php?acao=usuario_externo_logar&id_orgao_acesso_externo=0 
-
-Após o cadastro, o dirigente da entidade deverá enviar a relação da documentação necessária, por meio do Protocolo Digital do Ministério do Esporte, para fins de ativação do acesso, conforme mensagem automática enviada ao e-mail vinculado ao cadastro.
-
-Observação: Esta é uma mensagem automática. Favor desconsiderar caso a documentação supramencionada tenha sido apresentada integralmente antes da emissão deste Parecer.
-
-Permanecemos à disposição por meio do endereço eletrônico: cgfp.sneaelis@esporte.gov.br. 
-
-Atenciosamente,
-
-Coordenação-Geral de Formalização de Parcerias
-'''
-
-    xlsx_source_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                        r'Social\Teste001\fabi_DFP\Propostas Para Diligências Padrão.xlsm')
-    # Get excel file
-    excel_file = pd.ExcelFile(xlsx_source_path)
-    # Get all sheets inside the file and store in a list
-    sheet_names = excel_file.sheet_names
-
-    # Initiate automation instance
-    robo = PWRobo(text_tf=text_tf, text_conv=text_conv)
-
-    robo.land_page()
-    robo.init_search()
-
-    for i, sheet in enumerate(sheet_names):
-        if sheet == 'Planilha' or  sheet == 'Convênio':
-            continue
-        print(f"\n{'<' * 3}📄 Loading sheet [{i}/{len(sheet_names)}]: '{sheet}'{'>' * 3}"
-              .center(80, '-'))
-        try:
-            # Create the DataFrame with source data
-            df = pd.read_excel(xlsx_source_path, dtype=str, sheet_name=sheet)
-            print(f"\n✅ Sheet '{sheet}' loaded successfully with {len(df)} rows.\n")
-
-            for idx, row in df.iterrows():
-                try:
-                    porp_num = row['Nº Proposta']
-                    if pd.isna(porp_num):
-                        continue
-                    print(f"\n{'⚡' * 3}🚀 EXECUTING PROPOSAL: {porp_num} 🚀{'⚡' * 3}".center(70, '=')
-                          , '\n')
-                    robo.loop_search(porp_num)
-                    robo.requirements()
-                    robo.reset()
-                    try:
-                        if not robo.error_message():
-                            robo.land_page()
-                            robo.init_search()
-                    except Exception as e:
-                        print(
-                           f"🚨🚨 An unexpected error occurred: {str(e)[:100]}\nErro name:{type(e).__name__}")
-
-                except Exception as e:
-                    print(f"🚨🚨 An unexpected error occurred: {str(e)[:100]}\nErro name:{type(e).__name__}")
+                    print(f"🚨🚨 An unexpected error occurred during main: {str(e)[:100]}\nErro name"
+                          f":{type(e).__name__}")
 
         except Exception as e:
             print(f"🚨🚨 Failed to load or process sheet '{sheet}': {str(e)[:100]} (Error: {type(e).__name__})")
@@ -586,9 +481,3 @@ Coordenação-Geral de Formalização de Parcerias
 
 if __name__ == "__main__":
     main()
-    time.sleep(5)
-    main2()
-
-
-
-#25448_2025
