@@ -10,8 +10,6 @@ import logging
 import pandas as pd
 import numpy as np
 
-import requests
-
 from datetime import datetime
 
 from pandas import ExcelWriter
@@ -25,10 +23,8 @@ from selenium.common import WebDriverException, TimeoutException, NoSuchElementE
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import Select
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver import ActionChains
 
 class BreakInnerLoop(Exception):
@@ -46,10 +42,14 @@ class Robo:
             self.chrome_options = webdriver.ChromeOptions()
             # Endereço de depuração para conexão com o Chrome
             self.chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
-            # Inicializa o driver do Chrome com as opções e o gerenciador de drivers
-            self.driver = webdriver.Chrome(
-                service=Service(ChromeDriverManager().install()),
-                options=self.chrome_options)
+            try:
+                # Inicializa o driver do Chrome com as opções e o gerenciador de drivers
+                self.driver = webdriver.Chrome(options=self.chrome_options)
+
+            except Exception as e:
+                print(f"Error with ChromeDriverManager: {e}")
+                sys.exit()
+
             self.driver.switch_to.window(self.driver.window_handles[0])
 
             # Defines Logger
@@ -82,55 +82,6 @@ class Robo:
             raise e
 
 
-    # Set's up logger
-    def setup_logger(self, level=logging.INFO):
-        log_file_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                         r'Social\SNEAELIS - Robô PAD')
-
-        # Create logs directory if it doesn't exist
-        log_file_name = f'log_PAD_{datetime.now().strftime('%d_%m_%Y')}.log'
-
-        # Sends to specific directory
-        log_file = os.path.join(log_file_path, log_file_name)
-
-        if not os.path.exists(log_file_path):
-            os.makedirs(log_file_path)
-            print(f"✅ Directory created/verified: {log_file_path}")
-
-        logger = logging.getLogger()
-        if logger.handlers:
-            return logger
-
-        # Avoid adding handlers multiple times
-        logger.setLevel(level)
-
-        formatter = logging.Formatter(
-            '%(asctime)s | | %(message)s\n' + '─' * 100,
-            datefmt='%Y-%m-%d  %H:%M'
-        )
-
-        # File handler with rotation
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_file,
-            maxBytes=10485760,
-            backupCount=5,
-            encoding='utf-8'
-        )
-        file_handler.setFormatter(formatter)
-
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-
-        logger.addHandler(file_handler)
-        logger.addHandler(console_handler)
-
-        if os.path.exists(log_file):
-            print(f"🎉 SUCCESS! Log file created at: {log_file}")
-            print(f"📊 File size: {os.path.getsize(log_file)} bytes")
-            return logger
-        else:
-            print(f"❌ File not created at: {log_file}")
-
     # Navega até a página de busca da proposta
     def consulta_proposta(self):
         """
@@ -139,6 +90,8 @@ class Robo:
                Esta função clica nas abas principal e secundária para acessar a página
                onde é possível realizar a busca de processos.
                """
+        print(f'{'⚙️'*3}💼 INICIANDO CONSULTA DE PROPOSTAS 💼{'⚙️'*3}'.center(80, '='))
+        print()
         # Reseta para página inicial
         try:
             reset = self.webdriver_element_wait('//*[@id="header"]')
@@ -167,6 +120,9 @@ class Robo:
 
 
     def campo_pesquisa(self, numero_processo):
+        print(f"{'🔎' * 3}🧭 ACESSANDO CAMPO DE PESQUISA 🧭{'🔎' * 3}".center(80, '='))
+        print()
+
         try:
             # Seleciona campo de consulta/pesquisa, insere o número de proposta/instrumento e da ENTER
             self.driver.refresh()
@@ -186,18 +142,25 @@ class Robo:
             print(f' Falha ao inserir número de processo no campo de pesquisa. Erro: {type(e).__name__}')
 
 
-    def  busca_endereco(self, cnpj_xlsx: str, num_prop: str):
+    def busca_endereco(self, cnpj_xlsx: str, num_prop: str):
+        print(f"{'🗺️' * 3}📍 BUSCANDO ENDEREÇO 📍{'🗺️' * 3}".center(80, '='))
+        print()
+
         cod_municipio_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
                               r'Assistência Social\Teste001\municipios.xlsx')
         time.sleep(0.5)
         try:
-            print(f'🔍 Iniciando busca de endereço'.center(50, '-'), '\n')
-
-            # Aba Participantes
-            self.webdriver_element_wait('/html/body/div[3]/div[14]/div[1]/div/div[2]/a[3]/div/span').click()
             # Botão detalhar
-            time.sleep(0.5)
-            self.webdriver_element_wait('//*[@id="form_submit"]').click()
+            self.webdriver_element_wait('//*[@id="form_submit"]')
+            detalhar_btns = self.driver.find_elements(By.XPATH, '//*[@id="form_submit"]')
+
+            for btn in detalhar_btns:
+                btn_text = btn.get_attribute('value')
+                if btn_text == 'Detalhar':
+                    btn.click()
+                    break
+                else:
+                    continue
 
             cnjp_web = self.webdriver_element_wait('//*[@id="txtCNPJ"]').text
             if cnpj_xlsx != cnjp_web:
@@ -235,6 +198,8 @@ class Robo:
 
     # Insere o código na janela de seleção de município
     def cod_mun(self, cod_municipio):
+        print(f"{'🔎' * 3}🏙️ BUSCANDO CÓDIGO DO MUNICÍPIO 🏙️{'🔎' * 3}".center(80, '='))
+
         try:
             WebDriverWait(self.driver, 20).until(EC.number_of_windows_to_be(2))
             current_window = self.driver.current_window_handle
@@ -261,63 +226,9 @@ class Robo:
             print(f"❌ Falha ao cadastrar código do municipio"
                   f" {type(e).__name__}.\n Erro: {str(e)[:80]}")
 
-    # Mapeia os tipos de despesas nos quatro tipos disponíveis no transferegov
-    def map_tipos(self, tipo):
-            # Helper function with nested try-except
-            def map_tipos_helper(txt: str, cat: dict) -> str:
-                try:
-                    choices = []
-                    # Flatten the categories into choices with their corresponding keys
-                    for key, values in cat.items():
-                        for value in values:
-                            choices.append((value, key))
-
-                    # Extract just the text values for fuzzy matching
-                    choices_txt = [choice[0] for choice in choices]
-
-                    # First try exact match
-                    for value, key in choices:
-                        if txt == value:
-                            return key
-
-                    # Then try fuzzy match
-                    best_match, score = process.extractOne(txt, choices_txt, scorer=fuzz.ratio)
-                    if score > 80:
-                        for value, key in choices:
-                            if best_match == value:
-                                return key
-
-                    return ''  # No match found
-
-                except Exception as e:
-                    print(f"❌ Erro no mapeamento interno: {type(e).__name__} - {str(e)[:100]}")
-                    raise  # Re-raise to outer try-except
-
-            try:
-                # Normalize the text
-                tipo_txt = ''.join(c for c in unicodedata.normalize('NFKD', tipo)
-                                   if not unicodedata.combining(c))
-
-                categories = {
-                    'BEM': ['Material Esportivo', 'Uniformes'],
-                    'SERVICO': ['Recursos Humanos', 'Administrativa', 'Serviços', 'Identidades/Divulgações'],
-                    'OBRA': ['obra'],
-                    'TRIBUTO': ['tributo'],
-                    'OUTROS': ['']
-                }
-
-                tipo_gov = map_tipos_helper(tipo_txt, categories)
-
-                if tipo_gov != '':
-                    return tipo_gov
-                else:
-                    sys.exit()
-            except Exception as e:
-                print(f"❌ Erro no processamento do texto: {type(e).__name__} - {str(e)[:100]}")
-                return None
-
 
     def nav_plano_act_det(self):
+
         time.sleep(1)
         try:
             print(f'🚢 Navegando para o plano de ação detalhado:'.center( 50, '-'), '\n')
@@ -333,20 +244,6 @@ class Robo:
         except Exception as e:
             print(f"❌ Ocorreu um erro ao executar ao pesquisar Plano de Ação Detalhado: {type(e).__name__}"
                   f".\n Erro {str(e)[:50]}")
-
-
-    def session_status(self,driver_service_url='http://localhost:9222'):
-        try:
-            response = requests.get(f"{driver_service_url}/sessions")
-            if response.status_code == 200:
-                sessions = response.json().get('value', [])
-                print(f"Active browser sessions on port: {len(sessions)}")
-                for session in sessions:
-                    print(f"Session ID: {session.get('id')}, Capabilities: {session.get('capabilities')}")
-            else:
-                print(f"Unable to fetch sessions: Status {response.status_code}")
-        except Exception as e:
-            print(f"Error checking sessions: {str(e)[:100]}")
 
 
     # Loop para adicionar PAD da proposta
@@ -607,83 +504,6 @@ class Robo:
             raise BreakInnerLoop
 
 
-    # Finds which locator to use
-    def find_button_with_retry(self):
-        # Define all possible locator strategies and values
-        locators = [
-            (By.ID, 'form_submit'),
-            (By.NAME, 'detalharEsclarecimentoConvenioDadosDoEsclarecimentoVoltarForm'),
-            (By.XPATH, '//input[@value="Voltar"]'),
-            (By.XPATH, '//td[@class="FormLinhaBotoes"]/input'),
-            (By.CLASS_NAME, 'FormLinhaBotoes'),  # Will need additional find after
-            (By.XPATH, '//input[contains(@onclick, "setaAcao")]'),
-            (By.XPATH, '//*[@id="form_submit"]')
-        ]
-
-        for locator in locators:
-            try:
-                #print(f'Botão localizado com o seletor {locator[0]}')
-                return self.driver.find_element(*locator)
-            except Exception as e:
-                print(f"Falha com localizador {locator}: {str(e)[:80]}")
-                continue
-
-        raise NoSuchElementException("Could not find button using any locator strategy")
-
-
-    # Acessa a lista de anexos execução
-    def lista_execucao(self) -> None:
-        """
-               Acessa a lista de anexos da execução.
-
-               Esta função clica no botão para exibir a lista de anexos da execução
-               e define o nome da coluna que contém as datas dos anexos.
-
-               Returns:
-                   None
-               """
-        try:
-            # Seleciona lista de anexos execução e acessa a mesma
-            lista_anexos_execucao = self.webdriver_element_wait('//tbody//tr//input[2]')
-            lista_anexos_execucao.click()
-            # Define o nome da coluna de data
-        except TimeoutException:
-            print(f"Timeout waiting for element: {'//tbody//tr//input[2]'}")
-        except Exception as e:  # Catch other potential exceptions
-            print(f"🤷‍♂️❌ Erro ao tentar entra na lista de anexos execução: {e}")
-
-
-    def extrair_dados_excel(self, caminho_arquivo_fonte):
-        try:
-            data_frame = pd.read_excel(caminho_arquivo_fonte,dtype=str,header=None,sheet_name=0)
-
-            return data_frame
-        except Exception as e:
-            print(f"🤷‍♂️❌ Erro ao ler o arquivo excel: {os.path.basename(caminho_arquivo_fonte)}.\n"
-                  f"Nome erro: {type(e).__name__}\nErro: {str(e)[:100]}")
-
-    # Corrige o número da proposta que vem na planilha
-    def fix_prop_num(self,numero_proposta):
-        if '_' in numero_proposta:
-            numero_proposta_fixed = numero_proposta.replace('_', '/')
-        else:
-            numero_proposta_fixed = numero_proposta
-        return numero_proposta_fixed
-
-
-    def normaliza_text(self, txt: str) -> str:
-        if txt is None:
-            return ''
-
-        normal_text = ''.join(char for char in unicodedata.normalize('NFKD', txt) if not
-        unicodedata.combining(char))
-
-        normal_text = re.sub(r'[^a-z0-9]+', '_', normal_text)
-        normal_text = re.sub(r'_+', '_', normal_text).strip()
-
-        return normal_text
-
-
     def map_cod_natur_desp(self,dict_cod: dict, cod: str, threshhold: int=80) -> str:
         norm = self.normaliza_text(cod)
         choices = dict_cod.keys()
@@ -705,7 +525,44 @@ class Robo:
             print(f"\n‼️ Erro fatal ao inserir PAD: {type(e).__name__}\nErro == {str(e)[:100]}")
             sys.exit("Parando o programa.")
 
-    def delete_path(self, path:str):
+
+    @staticmethod
+    def extrair_dados_excel(caminho_arquivo_fonte):
+        try:
+            data_frame = pd.read_excel(caminho_arquivo_fonte,dtype=str,header=None,sheet_name=0)
+
+            return data_frame
+        except Exception as e:
+            print(f"🤷‍♂️❌ Erro ao ler o arquivo excel: {os.path.basename(caminho_arquivo_fonte)}.\n"
+                  f"Nome erro: {type(e).__name__}\nErro: {str(e)[:100]}")
+
+
+    # Corrige o número da proposta que vem na planilha
+    @staticmethod
+    def fix_prop_num(numero_proposta):
+        if '_' in numero_proposta:
+            numero_proposta_fixed = numero_proposta.replace('_', '/')
+        else:
+            numero_proposta_fixed = numero_proposta
+        return numero_proposta_fixed
+
+
+    @staticmethod
+    def normaliza_text(txt: str) -> str:
+        if txt is None:
+            return ''
+
+        normal_text = ''.join(char for char in unicodedata.normalize('NFKD', txt) if not
+        unicodedata.combining(char))
+
+        normal_text = re.sub(r'[^a-z0-9]+', '_', normal_text)
+        normal_text = re.sub(r'_+', '_', normal_text).strip()
+
+        return normal_text
+
+
+    @staticmethod
+    def delete_path(path:str):
         """
         Deletes a file or directory.
         - If it's a file → delete the file.
@@ -725,6 +582,116 @@ class Robo:
         else:
             print(f"⚠️ Unknown type (not file/dir): {path}")
 
+
+    @staticmethod
+    # Set's up logger
+    def setup_logger(level=logging.INFO):
+        log_file_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                         r'Social\SNEAELIS - Robô PAD')
+
+        # Create logs directory if it doesn't exist
+        log_file_name = f'log_PAD_{datetime.now().strftime('%d_%m_%Y')}.log'
+
+        # Sends to specific directory
+        log_file = os.path.join(log_file_path, log_file_name)
+
+        if not os.path.exists(log_file_path):
+            os.makedirs(log_file_path)
+            print(f"✅ Directory created/verified: {log_file_path}")
+
+        logger = logging.getLogger()
+        if logger.handlers:
+            return logger
+
+        # Avoid adding handlers multiple times
+        logger.setLevel(level)
+
+        formatter = logging.Formatter(
+            '%(asctime)s | | %(message)s\n' + '─' * 100,
+            datefmt='%Y-%m-%d  %H:%M'
+        )
+
+        # File handler with rotation
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=10485760,
+            backupCount=5,
+            encoding='utf-8'
+        )
+        file_handler.setFormatter(formatter)
+
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+
+        if os.path.exists(log_file):
+            print(f"🎉 SUCCESS! Log file created at: {log_file}")
+            print(f"📊 File size: {os.path.getsize(log_file)} bytes")
+            return logger
+        else:
+            print(f"❌ File not created at: {log_file}")
+
+
+    @staticmethod
+    # Mapeia os tipos de despesas nos quatro tipos disponíveis no transferegov
+    def map_tipos(tipo):
+        print(f"{'💰' * 3}📊 MAPEANDO TIPOS DE DESPESA 📊{'💰' * 3}".center(80, '='))
+        print()
+
+        # Helper function with nested try-except
+        def map_tipos_helper(txt: str, cat: dict) -> str:
+            try:
+                choices = []
+                # Flatten the categories into choices with their corresponding keys
+                for key, values in cat.items():
+                    for value in values:
+                        choices.append((value, key))
+
+                # Extract just the text values for fuzzy matching
+                choices_txt = [choice[0] for choice in choices]
+
+                # First try exact match
+                for value, key in choices:
+                    if txt == value:
+                        return key
+
+                # Then try fuzzy match
+                best_match, score = process.extractOne(txt, choices_txt, scorer=fuzz.ratio)
+                if score > 80:
+                    for value, key in choices:
+                        if best_match == value:
+                            return key
+
+                return ''  # No match found
+
+            except Exception as e:
+                print(f"❌ Erro no mapeamento interno: {type(e).__name__} - {str(e)[:100]}")
+                raise  # Re-raise to outer try-except
+
+        try:
+            # Normalize the text
+            tipo_txt = ''.join(c for c in unicodedata.normalize('NFKD', tipo)
+                               if not unicodedata.combining(c))
+
+            categories = {
+                'BEM': ['Material Esportivo', 'Uniformes'],
+                'SERVICO': ['Recursos Humanos', 'Administrativa', 'Serviços', 'Identidades/Divulgações'],
+                'OBRA': ['obra'],
+                'TRIBUTO': ['tributo'],
+                'OUTROS': ['']
+            }
+
+            tipo_gov = map_tipos_helper(tipo_txt, categories)
+
+            if tipo_gov != '':
+                return tipo_gov
+            else:
+                sys.exit()
+        except Exception as e:
+            print(f"❌ Erro no processamento do texto: {type(e).__name__} - {str(e)[:100]}")
+            return None
 
 def main() -> None:
     # Caminho do arquivo .xlsx que contem os dados necessários para rodar o robô
@@ -748,7 +715,6 @@ def main() -> None:
                 caminho_arquivo_fonte = os.path.join(root, filename)
                 print(f"\n{'⚡' * 3}🚀 EXECUTING FILE: {filename} 🚀{'⚡' * 3}".center(70, '=')
                       , '\n')
-
                 # Referência para o código de natureza da despesa
                 cod_natureza_despesa = {
                     'servicos': '33903999',
@@ -847,8 +813,11 @@ def main() -> None:
                         print(f"❌ Falha ao executar script. Erro: {type(e).__name__}\n{str(e)[:100]}")
                         sys.exit(0)  # Exit gracefully
                 else:
-                    robo.logger.info(f'Sucesso em adicionar o PAD, deletando arquivo {path}')
-                    robo.delete_path(path)
+                    print(caminho_arquivo_fonte)
+                    robo.logger.info(f'Sucesso em adicionar o PAD da proposta {numero_processo}, '
+                                     f'deletando arquivo {caminho_arquivo_fonte}')
+                    robo.delete_path(caminho_arquivo_fonte)
+
 
 
 
