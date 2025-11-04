@@ -573,29 +573,239 @@ if __name__ == "__main__":
 
 
     elif func == 6:
-        set_txt = set()
-        text = '''927336_TERMO DE FOMENTO
-927336/TERMO DE FOMENTO
-927376_TERMO DE FOMENTO
-927376/TERMO DE FOMENTO
-927768_TERMO DE FOMENTO
-927768/TERMO DE FOMENTO
-927770_TERMO DE FOMENTO
-927770/TERMO DE FOMENTO
-927981_TERMO DE FOMENTO
-927981/TERMO DE FOMENTO
-928381_TERMO DE FOMENTO
-928381/TERMO DE FOMENTO
-928412_TERMO DE FOMENTO
-928412/TERMO DE FOMENTO
-934705_TERMO DE FOMENTO
-934705/TERMO DE FOMENTO'''
-        for txt in text.split('\n'):
-            if '_' in txt:
-                set_txt.add(txt.split('_')[0])
-            else:
-                set_txt.add(txt.split('/')[0])
-        print(set_txt)
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
+        from playwright.sync_api import sync_playwright
+
+
+        class PWRobo:
+            def __init__(self, cdp_url: str = "http://localhost:9222"):
+                self.playwright = sync_playwright().start()
+                # Connect to existing browser via Chrome DevTools Protocol (CDP)
+                self.browser = self.playwright.chromium.connect_over_cdp(cdp_url)
+                # Get all browser contexts (browser windows/profiles)
+                self.context = self.browser.contexts[
+                    0] if self.browser.contexts else self.browser.new_context()
+                # Get all open pages (tabs)
+                self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
+                self.block_rss()
+
+                # Defines Logger
+                self.logger = self.setup_logger()
+
+                print(
+                f"✅ Connected to existing Chrome instance via Playwright. Connected to page: {self.page.url}")
+
+            @staticmethod
+            def setup_logger(level=logging.INFO):
+                log_file_path = (
+                    r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                    r'Social\Teste001\fabi_DFP')
+
+                # Create logs directory if it doesn't exist
+                log_file_name = f'log_emails_{datetime.now().strftime('%d_%m_%Y')}.log'
+
+                # Sends to specific directory
+                log_file = os.path.join(log_file_path, log_file_name)
+
+                if not os.path.exists(log_file_path):
+                    os.makedirs(log_file_path)
+                    print(f"✅ Directory created/verified: {log_file_path}")
+
+                logger = logging.getLogger()
+                if logger.handlers:
+                    return logger
+
+                # Avoid adding handlers multiple times
+                logger.setLevel(level)
+
+                formatter = logging.Formatter(
+                    '%(asctime)s | | %(message)s\n' + '─' * 100,
+                    datefmt='%Y-%m-%d  %H:%M'
+                )
+
+                # File handler with rotation
+                file_handler = logging.handlers.RotatingFileHandler(
+                    log_file,
+                    maxBytes=10485760,
+                    backupCount=5,
+                    encoding='utf-8'
+                )
+                file_handler.setFormatter(formatter)
+
+                console_handler = logging.StreamHandler()
+                console_handler.setFormatter(formatter)
+
+                logger.addHandler(file_handler)
+                logger.addHandler(console_handler)
+
+                if os.path.exists(log_file):
+                    print(f"🎉 SUCCESS! Log file created at: {log_file}")
+                    print(f"📊 File size: {os.path.getsize(log_file)} bytes")
+                    return logger
+                else:
+                    print(f"❌ File not created at: {log_file}")
+
+            @staticmethod
+            def mark_proposal_done(df: pd.DataFrame, email: str, file_path: str,
+                                   sheet_name: str) -> bool:
+                empty_cell = df["Preenchidos"].isna().idxmax()
+
+                df.loc[empty_cell, "Preenchidos"] = email
+
+                df.to_excel(file_path, sheet_name=sheet_name, index=False)
+
+                return True
+
+            def block_rss(self):
+                def route_handler(route, request):
+                    if request.resource_type in ["image", "stylesheet", "font"]:
+                        route.abort()
+                    else:
+                        route.continue_()
+
+                self.page.route('**/*', route_handler)
+
+            def init_search(self):
+                try:
+                    # In the landing page access proposal sub menu
+                    self.page.click("xpath=//*[@id='menuPrincipal']/div[1]/div[3]", timeout=5000)
+                    # Search for proposal
+                    self.page.click(
+                        "xpath=//div[@id='contentMenu']//a[normalize-space()='Consultar Propostas']",
+                        timeout=5000)
+
+                except PlaywrightTimeoutError as te:
+                    print(f"❗⏱️ Timeout occurred during initial search: {str(te)[:100]}\nErro name"
+                          f":{type(te).__name__}")
+                except PlaywrightError as pe:
+                    print(f"❗🧩 Playwright-specific error: {str(pe)[:100]}\nErro name:{type(pe).__name__}")
+                except Exception as e:
+                    print(
+                        f"🚨🚨 An unexpected error occurred while initiating search: {str(e)[:100]}\nErro name"
+                        f":{type(e).__name__}")
+
+
+            def loop_search(self, prop_num: str, idx: int):
+                try:
+                    self.logger.info(f"Pesquisando índice:{idx} ")
+                    # Select desired proposal
+                    self.page.fill("#consultarNumeroProposta", f"{prop_num}")  # number input
+                    self.page.click("xpath=(//input[@id='form_submit'])[1]", timeout=5000)  # click to consult
+                    self.page.click("div[class='numeroProposta'] a", timeout=5000)  # click to select
+                except PlaywrightTimeoutError as te:
+                    print(
+                        f"❗⏱️ Timeout occurred during search loop: {str(te)[:100]}\nErro name:{type(te).__name__}")
+                except PlaywrightError as pe:
+                    print(f"❗🧩 Playwright-specific error: {str(pe)[:100]}\nErro name:{type(pe).__name__}")
+                except Exception as e:
+                    print(f"🚨🚨 An unexpected error occurred under loop search: {str(e)[:100]}\nErro name"
+                          f":{type(e).__name__}")
+
+
+            def reset(self):
+                try:
+                    self.page.click("xpath=//*[@id='breadcrumbs']/a[2]", timeout=5000)
+
+                except PlaywrightTimeoutError as te:
+                    print(
+                        f"❗⏱️ Timeout occurred during reset: {str(te)[:100]}\nErro name:{type(te).__name__}")
+                except PlaywrightError as pe:
+                    print(f"❗🧩 Playwright-specific error: {str(pe)[:100]}\nErro name:{type(pe).__name__}")
+                except Exception as e:
+                    print(f"🚨🚨 An unexpected error occurred while reseting: {str(e)[:100]}\nErro name"
+                          f":{type(e).__name__}")
+
+            def land_page(self):
+                try:
+                    print("Trying to reset")
+                    icon = self.page.wait_for_selector("xpath=//*[@id='logo']/a/img", timeout=1000)
+                    if icon.is_enabled():
+                        icon.click()
+                        time.sleep(1.5)
+
+                except PlaywrightTimeoutError as te:
+                    print(f"❗⏱️ Timeout occurred at land page link location: {str(te)[:100]}\nErro name"
+                          f":{type(te).__name__}")
+                    return False
+                except PlaywrightError as pe:
+                    print(f"❗🧩 Playwright-specific error: {str(pe)[:100]}\nErro name:{type(pe).__name__}")
+                    return False
+                except Exception as e:
+                    print(f"🚨🚨 An unexpected error occurred at land_page: {str(e)[:100]}\nErro name"
+                          f":{type(e).__name__}")
+                    return False
+
+
+            def get_email(self) -> str:
+                #//a[@id='lnkConsultaAnterior']
+                self.page.click("xpath=//tr[@id='tr-alterarProponente']//input[@id='form_submit']",
+                                timeout=7000)
+                email_loc = self.page.wait_for_selector("xpath=//span[@id='txtEmail']",
+                                timeout=7000)
+                email = email_loc.text_content()
+                self.page.click("xpath=//a[@id='lnkConsultaAnterior']",
+                                timeout=7000)
+                return email
+
+        # convenio
+        def main():
+            xlsx_source_path = (
+                r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                r'Social\Teste001\fabi_DFP\Relação Proponentes Live.xlsx')
+            # Get excel file
+            excel_file = pd.ExcelFile(xlsx_source_path)
+            # Get all sheets inside the file and store in a list
+            sheet_names = excel_file.sheet_names
+
+            # Initiate automation instance
+            robo = PWRobo()
+
+            robo.land_page()
+            robo.init_search()
+
+            for i, sheet in enumerate(sheet_names):
+                # Termo de Fomento
+                # Convênio
+                if sheet == 'Planilha' or sheet == 'Termo de Fomento':
+                    continue
+                print(f"\n{'<' * 3}📄 Loading sheet [{i}/{len(sheet_names)}]: '{sheet}'{'>' * 3}"
+                      .center(80, '-'))
+                try:
+                    # Create the DataFrame with source data
+                    df = pd.read_excel(xlsx_source_path, dtype=str, sheet_name=sheet)
+                    print(f"\n✅ Sheet '{sheet}' loaded successfully with {len(df)} rows.\n")
+
+                    proposal_done = set(df["E-Mail"])
+
+                    for idx, row in df.iterrows():
+                        try:
+                            prop_num = row['Nº Proposta']
+                            if pd.isna(prop_num):
+                                continue
+                            elif prop_num in proposal_done:
+                                print(f"Proposal: {prop_num} already filled")
+                                continue
+                            print("\n", f"{'⚡' * 3}🚀 EXECUTING PROPOSAL: {prop_num}, index: {idx} "
+                                        f"🚀{'⚡' * 3}".center(70,
+                                                             '='), '\n')
+
+                            robo.loop_search(prop_num, idx)
+                            email = robo.get_email()
+
+                            if robo.mark_proposal_done(df=df, proposal_num=email,
+                                                       file_path=xlsx_source_path,
+                                                       sheet_name=sheet):
+                                print(f"\n✅ Proposal {prop_num} marked as Done.\n")
+                        except Exception as e:
+                            print(f"🚨🚨 An unexpected error occurred during main: {str(e)[:100]}\nErro name"
+                                  f":{type(e).__name__}")
+                except Exception as e:
+                    print(
+                        f"🚨🚨 Failed to load or process sheet '{sheet}': {str(e)[:100]} (Error: {type(e).__name__})")
+
+
+        if __name__ == "__main__":
+            main()
 
 
     # confere os pads com time.sleep
@@ -3039,6 +3249,7 @@ if __name__ == "__main__":
         results = find_matching_values(old_xlsx, new_xlsx, 'Nº Proposta', 'Nº Proposta')
         print(results)
 
+
     # Create directories
     elif func == 13:
         root_dir = r'C:\Users\felipe.rsouza\Documents\fabi'
@@ -3092,6 +3303,8 @@ if __name__ == "__main__":
                         print(f"Target folder not found: {target_folder_path}")
 
         print("Folder substitution completed successfully.")
+
+
     # Compress pdf
     if func == 14:
         def compress_pdf_fitz(dir_path, dpi=150, quality=80):
@@ -3161,6 +3374,7 @@ if __name__ == "__main__":
         compress_pdf_fitz(dir_path=dir_path,
                             dpi=120,
                             quality=80)
+
 
     if func == 15:
         import dash
@@ -3264,7 +3478,13 @@ if __name__ == "__main__":
         app.run(debug=True, port=8050)
 
 
-    if func == 16:
-        txt_ = (f'Para atendimento integral da diligência inserida na aba "Pareceres" em '
-                f'{datetime.now().strftime("%d/%m/%Y")}.')
-        print(txt_)
+    elif func == 16:
+        xlsx_source_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                            r'Social\Teste001\fabi_DFP\Propostas Para Diligências Padrão.xlsm')
+
+        xlsx_source_path2 = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                            r'Social\Teste001\fabi_DFP\Propostas Para Diligências Padrão_rec.xlsx')
+
+        df = pd.read_excel(xlsx_source_path, dtype=str, sheet_name='Convênio')
+
+        df.to_excel(xlsx_source_path2, sheet_name='Convênio', index=False)

@@ -1,3 +1,4 @@
+from dash.testing.wait import until
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -456,7 +457,9 @@ def extract_all_rows_text(driver, table_xpath, timeout=2.5):
                 text = label.text.strip()
                 row_data.append(text)
 
-        joined_row = " | ".join(row_data)
+        joined_row = " || ".join(row_data)
+
+        print(f"📦📄 Valor obtido: {joined_row[:50]}...")  # Trunca valores longos
 
         return joined_row
 
@@ -556,9 +559,9 @@ def extrat_all_cells_text(driver, table_xpath, col_idx, timeout=10):
 # Navega pela primeira página e coleta os dados
 def loop_primeira_pagina(driver, plano_acao: dict):
     """ Loop que pega dados da primeira aba """
-    #  [0] Beneficiário // [1] UF // [2] Banco // [3] Agência // [4] Conta // [5] Situação Conta //
-    #  [6] Emenda Parlamentar // [7] Valor de Investimento // # [8] Valor de Custeio //
-    #  [9] Finalidades // [10] Programações Orçamentárias selecionadas
+    #  [0] Beneficiário // [1] UF // [2] Banco // [3] Agência // [4] Emenda Parlamentar
+    #  [5] Valor de Investimento // [6] Valor de Custeio
+    #  [8] Dados Complementares do Plano // [8] Finalidades
     lista_caminhos = [
         # Beneficiário [0][1]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
@@ -569,7 +572,7 @@ def loop_primeira_pagina(driver, plano_acao: dict):
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
         '-basicos/form/br-fieldset[1]/fieldset/div[2]/div[1]/div[2]/br-input/div/div[1]/input',
 
-        # Banco [2]>[5]
+        # Banco [2][3]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
         '-basicos/form/br-fieldset[1]/fieldset/div[2]/div[2]/div[1]/br-input/div/div[1]/input',
@@ -578,15 +581,7 @@ def loop_primeira_pagina(driver, plano_acao: dict):
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
         '-basicos/form/br-fieldset[1]/fieldset/div[2]/div[2]/div[2]/br-input/div/div[1]/input',
 
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
-        '-basicos/form/br-fieldset[1]/fieldset/div[2]/div[2]/div[3]/br-input/div/div[1]/input',
-
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
-        '-basicos/form/br-fieldset[1]/fieldset/div[2]/div[2]/div[4]/br-input/div/div[1]/input',
-
-        # Dados emenda parlamentar [6] > [8]
+        # Dados emenda parlamentar [4] > [6]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
         '-basicos/form/br-fieldset[2]/fieldset/div[2]/div/div[1]/br-input/div/div[1]/input',
@@ -599,35 +594,37 @@ def loop_primeira_pagina(driver, plano_acao: dict):
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
         '-basicos/form/br-fieldset[2]/fieldset/div[2]/div/div[2]/br-input/div/div[1]/input',
 
-        # Finalidade [9]
+        # Dados Complementares do Plano [7]
+        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
+        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
+        '-basicos/form/br-fieldset[3]/fieldset/div[2]/div[1]/div/br-textarea/div/div[1]/div/textarea',
+        
+        # Finalidades [8]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
         '-basicos/form/br-fieldset[3]/fieldset/div[2]',
-
-        # Programações Orçamentárias selecionadas [10]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/'
-        'transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/'
-        'transferencia-plano-acao-dados-basicos/form/br-fieldset[3]/fieldset/div[2]/div[2]/div/br-table/div/'
-        'ngx-datatable/div/datatable-body/datatable-selection/datatable-scroller/datatable-row-wrapper/'
-        'datatable-body-row/div[2]/datatable-body-cell[1]/div'
     ]
 
-    time.sleep(3)
+    remover_backdrop(driver)
+    WebDriverWait(driver, 7).until(
+        EC.presence_of_element_located((By.XPATH,
+        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
+        '/transferencia-plano-acao/transferencia-cadastro/plano-acao-info/div'
+    )))
+
     plano_acao["beneficiario"]["nome"] = obter_valor_campo_desabilitado(driver, lista_caminhos[0])
     plano_acao["beneficiario"]["uf"] = obter_valor_campo_desabilitado(driver, lista_caminhos[1])
+
     plano_acao["dados_bancarios"]["banco"] = obter_valor_campo_desabilitado(driver, lista_caminhos[2])
-
     plano_acao["dados_bancarios"]["agencia"] = obter_valor_campo_desabilitado(driver, lista_caminhos[3])
-    plano_acao["dados_bancarios"]["conta"] = obter_valor_campo_desabilitado(driver, lista_caminhos[4])
-    plano_acao["dados_bancarios"]["situacao"] = obter_valor_campo_desabilitado(driver, lista_caminhos[5])
 
-    plano_acao["emenda"]["numero"] = obter_valor_campo_desabilitado(driver, lista_caminhos[6])
-    plano_acao["emenda"]["valor"] = obter_valor_campo_desabilitado(driver, lista_caminhos[7])
-    plano_acao["emenda"]["custeio"] = obter_valor_campo_desabilitado(driver, lista_caminhos[8])
+    plano_acao["emenda"]["numero"] = obter_valor_campo_desabilitado(driver, lista_caminhos[4])
+    plano_acao["emenda"]["valor"] = obter_valor_campo_desabilitado(driver, lista_caminhos[5])
+    plano_acao["emenda"]["custeio"] = obter_valor_campo_desabilitado(driver, lista_caminhos[6])
 
-    plano_acao["finalidade"] = extract_all_rows_text(driver=driver, table_xpath=lista_caminhos[9])
+    plano_acao["dados_comp_plano"] = obter_valor_campo_desabilitado(driver, lista_caminhos[7])
 
-    plano_acao["programacoes_orcamentarias"] = extract_all_rows_text(driver, lista_caminhos[10])
+    plano_acao["finalidades"] = extract_all_rows_text(driver=driver, table_xpath=lista_caminhos[8])
 
     return plano_acao
 
@@ -635,266 +632,78 @@ def loop_primeira_pagina(driver, plano_acao: dict):
 # Navega pela primeira página e coleta os dados
 def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
     """ Loop que pega dados da segunda aba em diante"""
-    # [0] Aba Dados Orçamentários
-    # [1] Pagamentos minuta ; Pagamentos Valor ; Pagamentos Ordem
-    # [2] Aba Plano de Trabalho
-    # [3] Declaracoes Nao Uso Pessoal ; Recursos no Orçamento do Beneficiário
-    # [4] Classificação Orçamentária de Despesa
-    # [5] Período de Execução
-    # [6] Prazo de Execução em meses
-    # [7] Historico Sistema ; Historico Concluido
-    # [8] Execucao Executor ; Objeto ; Metas
+    # [0] Aba Plano de Trabalho
+    # [1] Declaracão Não Uso Pessoal
+    # [2] Classificação Orçamentária de Despesa
+    # [3] Prazo de Execução em meses
+    # [4] Execucao Executor ; Objeto ; Metas
 
     lista_caminhos = [
         # [0]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/'
-        'transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/ul/li[2]/button/span',
+        'transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/ul/li[3]/button/span',
 
         # [1]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
-        '-orcamentarios/br-table/div/ngx-datatable',
+        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano'
+        '-trabalho/form/div/div/br-fieldset[2]/fieldset/div[2]/div[1]/div/br-checkbox/div',
 
         # [2]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/'
-        'transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/ul/li[3]/button/span',
-
-        # [3]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano'
-        '-trabalho/form/div/div/br-fieldset[2]/fieldset/div[2]/div[1]/div/br-checkbox/div/label',
-
-        # [4]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano'
         '-trabalho/form/div/div/br-fieldset[1]/fieldset/div[2]/div[3]/div/br-textarea/div/div['
         '1]/div/textarea',
 
-        # [5]
+        # [3]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano'
         '-trabalho/form/div/div/br-fieldset[2]/fieldset/div[2]/div[2]/div[1]/br-input/div/div[1]/input',
 
-        # [6]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano'
-        '-trabalho/transferencia-plano-trabalho-resumo/div/div[6]/div[2]/div',
-
-        # [7]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano'
-        '-trabalho/br-fieldset[2]/fieldset/div[2]/div',
-
-        # [8]
+        # [4]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano'
         '-trabalho/form/div/div/br-fieldset[3]/fieldset/div[2]/div[2]/div[2]/br-table/div/ngx-datatable',
     ]
 
     try:
-        # Aba Dados Orçamentários
-        clicar_elemento(driver, lista_caminhos[0])
-        time.sleep(3)
-
-        # minuta section
-        plano_acao["pagamentos"]["minuta"] = extrat_all_cells_text(driver, lista_caminhos[1], 0)
-        plano_acao["pagamentos"]["valor"] = extrat_all_cells_text(driver, lista_caminhos[1], 3)
-        plano_acao["pagamentos"]["ordem"] = ''
-
         # Aba Plano de Trabalho
-        clicar_elemento(driver, lista_caminhos[2])
-        time.sleep(5)
+        clicar_elemento(driver, lista_caminhos[0])
+        remover_backdrop(driver)
+        time.sleep(3)
+        try:
+            error_msg_path = ('/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/br'
+                              '-alert-messages/div/div/div[2]/div')
+            error_msg_elm = driver.find_element(By.XPATH, error_msg_path)
+
+            if error_msg_elm:
+                driver.refresh()
+                time.sleep(3)
+        except:
+            pass
 
         # Declarações section
         plano_acao["declaracoes"]["recursos_orcamento"] = get_radio_selection(driver)
         plano_acao["declaracoes"]["nao_uso_pessoal"] = obter_valor_campo_desabilitado(driver,
-                                                                                      lista_caminhos[3])
+                                                                                      lista_caminhos[1])
         if plano_acao["declaracoes"]["nao_uso_pessoal"] not in ['', 'Campo Vazio']:
             plano_acao["declaracoes"]["nao_uso_pessoal"] = 'Sim'
         else:
             plano_acao["declaracoes"]["nao_uso_pessoal"] = 'Não'
 
         # Classificação Orçamentária de Despesa
-        plano_acao["classificacao_orcamentaria"] = obter_valor_campo_desabilitado(driver, lista_caminhos[4])
+        plano_acao["classificacao_orcamentaria"] = obter_valor_campo_desabilitado(driver, lista_caminhos[2])
 
-        # Prazo de Execução em meses \\ Periodo_exec
-        plano_acao["prazo_de_execucao"] = obter_valor_campo_desabilitado(driver, lista_caminhos[5])
-        #plano_acao["periodo_exec"] = obter_valor_campo_desabilitado(driver, lista_caminhos[6])
-
-        # Histórico section
-        #coletar_dados_hist(driver, lista_caminhos[7], index=index, df_path=df_path)
+        # Prazo de Execução em meses
+        plano_acao["prazo_de_execucao"] = obter_valor_campo_desabilitado(driver, lista_caminhos[3])
 
         # Execução and Metas section
-        coletar_dados_listas(driver, lista_caminhos[8], index=index, df=df, df_path=df_path)
+        coletar_dados_listas(driver, lista_caminhos[4], index=index, df=df, df_path=df_path)
 
         return plano_acao
 
     except Exception as erro:
         print(f"❌ Erro inesperado: {type(erro).__name__} - {truncate_error(str(erro))}")
         return None
-
-
-# Coleta os dados do histórico
-def coletar_dados_hist(driver, tabela_xpath, index, df_path):
-    """
-    Coleta e armazena dados históricos de uma tabela em uma página web.
-
-    Esta função localiza uma tabela de histórico via XPath em uma página carregada por Selenium,
-    extrai dados das linhas relevantes (como "Sistema" e "Concluído") e os armazena em um
-    DataFrame lido a partir de um arquivo Excel. Os dados são inseridos em posições apropriadas
-    ou adicionados como novas linhas, se necessário.
-
-    Parameters:
-        driver: Instância do WebDriver para controle da página.
-        tabela_xpath (str): XPath que localiza a tabela de histórico na página.
-        index (int): Índice da linha no DataFrame onde os dados "Sistema" devem ser inseridos.
-        df_path (str): Caminho para o arquivo Excel onde os dados serão lidos e salvos.
-
-    Side Effects:
-        - Lê e escreve em um arquivo Excel.
-        - Atualiza o DataFrame com dados extraídos da web.
-        - Pode modificar a estrutura do DataFrame, inserindo novas linhas.
-
-    Returns:
-        None
-    """
-
-    # Helper function to check empty rows
-    def is_row_empty(row_idx) -> bool:
-        try:
-            return all(
-                pd.isna(df.at[row_idx, colmn]) or
-                str(df.at[row_idx, col]).strip() in ('', 'None', 'nan')
-                for colmn in colunas_para_salvar
-            )
-        except KeyError as err:
-            print(f"⚠️ Missing column {err}")
-            return True
-
-    # Helper function to check empty cells
-    def is_first_cell_empty(row_idx: int, col_id: int = 0) -> bool:
-        """
-        Verifica se a célula na linha e coluna especificadas está vazia ou contém NaN.
-
-        A função assume que existe uma variável global chamada `df` (um DataFrame pandas)
-        e verifica se a célula localizada pelo índice da linha e da coluna está vazia
-        (string vazia ou NaN). Também retorna True se os índices estiverem fora dos limites.
-
-        Parameters:
-            row_idx (int): Índice da linha a ser verificada.
-            col_id (int, optional): Índice da coluna a ser verificada (padrão é 0).
-
-        Returns:
-            bool: True se a célula estiver vazia, contiver NaN ou estiver fora dos limites.
-        """
-        if row_idx >= len(df) or col_id >= len(df.columns):
-            return True
-        cell = df.iat[row_idx, col_id]
-        return pd.isna(cell) or cell == ""
-
-    print(f"\n⚙️ Processando Histórico — índice {index}\n")
-
-    # Read data frame
-    df = pd.read_excel(df_path, dtype=str, engine='openpyxl')
-
-    colunas_para_salvar = ["Responsável", "Data", "Situação"]
-    # Initialize data variables
-    sys_data = ["Não Encontrado"] * 3
-    conc_data = ["Não Encontrado"] * 3
-    last_data = ["Não Encontrado"] * 3
-    table_data = []
-
-    try:
-        # Get all rows in the table body
-        rows = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located(
-            (By.XPATH, f"{tabela_xpath}//datatable-body-row")))
-
-        # Process each row to extract cell data
-        for i, row in enumerate(rows):
-            try:
-                cells = row.find_elements(By.XPATH, ".//datatable-body-cell")
-                row_data = [cell.text.strip() if cell.text else "Empty" for cell in cells]
-                table_data.append(row_data)
-            except Exception as e:
-                print(f"⚠️ Error processing row {i}: {str(e)[:50]}")
-                continue
-
-        # Search backwards for "Sistema" row
-        for k in range(len(table_data) - 1, -1, -1):
-            try:
-                if table_data[k][0] == "Sistema":
-                    sys_data = table_data[k][:3]  # First 3 columns
-
-                    # Look for "Concluído" in subsequent rows
-                    for j in range(k + 1, len(table_data)):
-                        if table_data[j][2] == "Concluído":
-                            conc_data = table_data[j][:3]
-                            break
-            except Exception as e:
-                print(f"❌ Falha na extração de dados histórico: {type(e).__name__} -"
-                      f" {truncate_error(str(e))}")
-        try:
-            if table_data[0][2].strip() == "Enviado para análise":
-                last_data = table_data[0]
-        except Exception as i_err:
-            print(f"❌ Erro ao comparar primeira linha da tabela histórco: {type(i_err).__name__} -"
-                  f" {truncate_error(str(i_err))}")
-
-        try:
-            empty_row = next((i for i in range(index, len(df) + 1) if is_row_empty(i)), len(df))
-
-            # Save Sistema data
-            if is_row_empty(index):
-                for col, val in zip(colunas_para_salvar, sys_data):
-                    df.at[index, col] = val
-            else:
-                print(f"⚠️ Row {index} not empty. Finding next available...")
-                if empty_row >= len(df):
-                    df.loc[empty_row] = [None] * len(df.columns)
-                for col, val in zip(colunas_para_salvar, sys_data):
-                    df.at[empty_row, col] = val
-
-            # Save Concluído data
-            conc_start = index + 1
-            current_cell = is_first_cell_empty(conc_start, 33)
-            next_first_cell = is_first_cell_empty(conc_start + 1, )
-            first_cell = is_first_cell_empty(conc_start)
-
-            nova_linha_data = {col: conc_data[q] for q, col in enumerate(colunas_para_salvar)}
-            nova_linha_2_data = {col_w: last_data[w] for w, col_w in enumerate(colunas_para_salvar)}
-
-            if current_cell and first_cell and next_first_cell:
-                # Insert both rows at conc_start
-                new_rows = [
-                    {**{col: None for col in df.columns}, **nova_linha_data},
-                    {**{col: None for col in df.columns}, **nova_linha_2_data}
-                ]
-
-                upper = df.iloc[:conc_start]
-                lower = df.iloc[conc_start:]
-                df = pd.concat([upper, pd.DataFrame(new_rows), lower], ignore_index=True)
-            else:
-                # Convert the new data to a DataFrame
-                new_row = {col: nova_linha_data.get(col, '') for col in df.columns}
-                new_row_2 = {col: nova_linha_2_data.get(col, '') for col in df.columns}
-                new_row_df = pd.DataFrame([new_row, new_row_2])
-
-                # Split the original DataFrame
-                upper = df.iloc[:conc_start]
-                lower = df.iloc[conc_start:]
-
-                df = pd.concat([upper, new_row_df, lower], ignore_index=True)
-        except Exception as e:
-            print(f"❌ Erro ao organizar DataFrame: {type(e).__name__} - {truncate_error(str(e))}")
-
-        try:
-            # Save the DataFrame
-            df.to_excel(df_path, index=False, engine='openpyxl')
-        except Exception as e:
-            print(f"❌ Erro ao salvar dados histórico: {type(e).__name__} - {truncate_error(str(e))}")
-
-    except Exception as erro:
-        print(f"❌ Erro ao coletar dados histórico: {type(erro).__name__} - {truncate_error(str(erro))}")
 
 
 # Função para coletar executores e metas
@@ -1067,9 +876,7 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
         "Rendimento de Aplicação",
         "Doações",
         "Email",
-        "Responsável_Social",
-        "Data/Hora_Social",
-        "Endereço_Eletrônico_Social"
+
     ]
     # Get data before expanding "metas" this is done to avoid duplicating these two information
     executor_dict = {
@@ -1089,9 +896,6 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
         "Rendimento_aplicação": '',
         "Doações": '',
         "Email": '',
-        "Responsável_Social": '',
-        "Data/Hora_Social": '',
-        "Endereço_Eletrônico_Social": ''
     }
     emails_data = ''
     try:
@@ -1167,13 +971,7 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                 # retorna para a página de plano de trabalho
                 driver.find_element(By.XPATH, go_back_button_path).click()
 
-                nova_linha_data.update({
-                    "Email": emails_data,
-                    # All idexed values using comprehention
-                    "Responsável_Social": '',
-                    "Data/Hora_Social": '',
-                    "Endereço_Eletrônico_Social": ''
-                })
+                nova_linha_data.update({"Email": emails_data})
                 # Insert the initial nova_linha_data (email/social) to the DataFrame
                 # Just-in-time merge for DataFrame insertion
                 row_to_insert = {**executor_dict, **nova_linha_data}
@@ -1199,12 +997,8 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                     df = pd.concat([upper, new_row_df, lower], ignore_index=True)
 
                 # Reset social data so it's not duplicated
-                nova_linha_data.update({
-                    "Email": '',
-                    "Responsável_Social": '',
-                    "Data/Hora_Social": '',
-                    "Endereço_Eletrônico_Social": ''
-                })
+                nova_linha_data.update({"Email": ''})
+
                 for i in range(0, len(metas), 3):
                     meta_main = metas[i]
                     meta_custeio = metas[i + 1]
@@ -1318,9 +1112,8 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
 
 
 # Lineariza o dicionário aninhado
-def flatten_dict(d, parent_key='', sep='.'):
+def flatten_dict(dictionary, parent_key='', sep='.'):
     """
-    d → dicionário
     parent_key → prefixo
     sep → separador
     items → resultado
@@ -1331,10 +1124,10 @@ def flatten_dict(d, parent_key='', sep='.'):
     """
 
     items = {}
-    for k, v in d.items():
+    for k, v in dictionary.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
         if isinstance(v, dict):
-            items.update(flatten_dict(v, new_key, sep=sep))  # recursão
+            items.update(flatten_dict(dictionary=v, parent_key=new_key, sep=sep))  # recursão
         else:
             items[new_key] = v
     return items
@@ -1418,16 +1211,10 @@ def atualiza_excel(df_path, df, index, plano_acao: dict, col_range: list = None,
         """
 
     selected_keys = [
-        "pagamentos.minuta",
-        "pagamentos.valor",
-        "pagamentos.ordem",
         "declaracoes.recursos_orcamento",
         "classificacao_orcamentaria",
         "declaracoes.nao_uso_pessoal",
         "prazo_de_execucao",
-        "periodo_exec",
-        "controle_social.conselhos",
-        "controle_social.instancias"
     ]
 
     # Flatten the dictionary and filter only selected keys
@@ -1436,8 +1223,8 @@ def atualiza_excel(df_path, df, index, plano_acao: dict, col_range: list = None,
 
     # Map to Excel columns
     column_headers = [
-        "Minuta", "Valor", "Ordem do Pagamento", "Indicação Orçamento Beneficiario",
-        "Classificação Orçamentária de Despesa", "Declaração Recurso", "Prazo Execução", "Período Execução"
+        "Indicação Orçamento Beneficiario","Classificação Orçamentária de Despesa",
+        "Declaração Recurso", "Prazo Execução"
     ]
     if second_init:
         df = pd.read_excel(df_path, dtype=str)
@@ -1445,7 +1232,6 @@ def atualiza_excel(df_path, df, index, plano_acao: dict, col_range: list = None,
     if col_range:
         columns_range = col_range
         selected_keys = list(flat_dict.keys())[init_range:fin_range]
-
         for col_idx, key in zip(columns_range, selected_keys):
             value = flat_dict.get(key, "")
             df[df.columns[col_idx]] = df[df.columns[col_idx]].astype('object')
@@ -1474,23 +1260,12 @@ def has_actual_data(x):
     return True  # Numbers, booleans, etc.
 
 
-# Debugger funtion for list
-def list_debugger(my_list):
-    print("\n DEBUG START :=^50")
-    print("1. Full list:", my_list)
-    print("2. Length:", len(my_list))
-    print("3. Indices and items:")
-    for i, item in enumerate(my_list):
-        print(f"   [{i}]: {item}")
-    print("=== DEBUG END ===\n")
-
-
 # Função principal
 def main():
     driver = conectar_navegador_existente()
 
     planilha_final = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
-                      r"Social\Teste001\Sofia\Emendas pix 2025 - Copia.xlsx")
+                      r"Social\Teste001\Sofia\Emendas pix 2025\Emendas pix 2025_2_ciclo - Copia.xlsx")
 
     try:
         df = pd.read_excel(planilha_final, engine='openpyxl').astype(object)
@@ -1529,27 +1304,19 @@ def main():
                 "dados_bancarios": {
                     "banco": "",  # Nome do banco
                     "agencia": "",  # Número da agência
-                    "conta": "",  # Número da conta
-                    "situacao": ""  # Situação atual da conta
                 },
                 "emenda": {
                     "numero": "",  # Número/identificação da emenda
                     "valor": "",  ## Valor de investimento
                     "custeio": ""  # Valor de custeio
                 },
-                "finalidade": ""
+                "dados_comp_plano": ""
                 ,
-                "programacoes_orcamentarias": ""
+                "finalidades": ""
                 ,
-                "pagamentos": {
-                    "minuta": "",  # Número da minuta
-                    "valor": "", # Valor total
-                    "ordem": "",  # Número da ordem de pagamento
-
-                },
                 "declaracoes": {
                     "recursos_orcamento": False,  # Recursos no orçamento próprio?
-                    "nao_uso_pessoal": False  # Não será usado para pessoal/dívida?
+                    "nao_uso_pessoal": False  # Não será usado para despesa de pessoal/ serviço da dívida?
                 },
                 "execucao": {
                     "executor": "",  # Nome do executor
@@ -1561,16 +1328,6 @@ def main():
                     "quantidade": "",  # Quantidade prevista
                     "meses_previstos": "", # Meses previstos
                 },
-                "historico": {
-                    "responsavel": "",  # Histórico registrado no sistema
-                    "data": "",
-                    "situacao": ""  # Histórico após conclusão
-                },
-                "controle_social": {
-                    "conselhos": "",  # Informações dos conselhos locais
-                    "instancias": ""  # Instâncias de controle social
-                },
-                "periodo_exec ": "",
                 "prazo_de_execucao": "",
                 "classificacao_orcamentaria": "",
             }
@@ -1662,7 +1419,7 @@ def main():
                 print(f"\n{' Inicio do loop da primeira página ':=^60}\n")
                 # Coleta os dados da primeira pagina
                 plano_acao = loop_primeira_pagina(driver=driver, plano_acao=plano_acao)
-                domain = list(range(1, 12))
+                domain = list(range(1, 10))
                 atualiza_excel(
                     df_path=planilha_final,  # Excel file path
                     df=df,  # DataFrame to modify
@@ -1670,7 +1427,7 @@ def main():
                     col_range=domain,
                     plano_acao=plano_acao,  # Dictionary containing data
                     init_range=0,  # First key to use from flattened dict
-                    fin_range=10  # Last key to use (exclusive)
+                    fin_range=9  # Last key to use (exclusive)
                 )
 
                 print(f"\n{' Inicio do loop da segunda página ':=^60}\n")
@@ -1700,7 +1457,6 @@ def main():
                                 "/html/body/transferencia-especial-root/br-main-layout/div/div/div/main"
                                 "/transferencia-especial-main/transferencia-plano-acao/transferencia-plano"
                                 "-acao-consulta/br-table/div/div/div/button/i")
-
                 index += 1
 
             except Exception as erro:
