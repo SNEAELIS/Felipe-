@@ -8,18 +8,22 @@ import pandas as pd
 
 from datetime import datetime
 
+from fontTools.misc.cython import returns
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
 
 class PWRobo:
-    def __init__(self,webinar_invite:str, text_tf:str, text_conv:str, cdp_url:str ="http://localhost:9222"):
+    def __init__(self,webinar_invite:str=None, text_tf:str=None, text_conv:str=None, cdp_url:str
+    ="http://localhost:9222"):
         # Standard text for term of promotion proposal
-        self.feedback_txt_one = text_tf
+        #self.feedback_txt_one = text_tf
+
         # Standard text for agreement proposal
-        self.feedback_txt_two = text_conv
+        #self.feedback_txt_two = text_conv
+
         # Standard text for webinar invitational
-        self.webinar_invite_txt = webinar_invite
+        #self.webinar_invite_txt = webinar_invite
 
         # Connect to existing browser via Chrome DevTools Protocol (CDP)
         self.playwright = sync_playwright().start()
@@ -143,7 +147,7 @@ class PWRobo:
                   f":{type(e).__name__}")
 
 
-    def loop_search(self, prop_num: str, idx: int):
+    def loop_search(self, prop_num: str, idx: int, pend_txt:str):
         try:
             self.logger.info(f"Pesquisando índice:{idx}, proposta: {prop_num} ")
             # Select desired proposal
@@ -432,93 +436,13 @@ class PWRobo:
                   f":{type(e).__name__}")
             return False
 
+    @staticmethod
+    def create_pending_list(pending_text) -> list:
+        return []
 
 
 # convenio
 def main():
-    text_conv = r'''Prezados,
-
-Favor desconsiderar a diligência anterior (08/10/2025), tendo em vista o equívoco relacionado ao link 2. 
-
-Dessa forma, com vistas à celebração da parceria e conforme exigido nas normativas legais vigente, solicitamos o encaminhamento da seguinte documentação:
-
-1. Cópia da LOA (Lei Orçamentária Anual);
-2. Cópia do QDD (Quadro de Detalhamento de Despesa);
-3. Documento que apresente o número da matrícula funcional do Representante Legal; e
-4. Termo de Posse/Nomeação ou Diploma do Representante Legal.
-5. Declarações Consolidadas – Sem prazo de validade (Link 1); e
-6. Declarações Consolidadas – Validade no mês da assinatura (Link 2).
-
-Link 1 – Declarações Consolidadas – Sem prazo de validade:
-https://sneaelis.itech.ifsertaope.edu.br/forms/declaracoes/
-
-Link 2 – Declarações Consolidadas – Validade no mês da assinatura:
-https://homologacao.itech.ifsertaope.edu.br/forms/declaracoes/Validade-declaracao-mes 
-
-Após a inserção integral dessas documentações na aba “Requisitos para Celebração” do Transferegov, o Proponente deverá acionar a opção “Enviar para Análise”, disponível ao final da página.
-
-Cumprida integralmente esta diligência, prosseguiremos com as etapas necessárias para celebração do convênio sob a condição suspensiva, cabendo ao Proponente apresentar o Termo de Referência e documentos correlatos (Projeto Técnico, Cotações e Planilha de Custos) no prazo de 09 (nove) meses a contar da assinatura do instrumento, conforme determina a legislação vigente.
-
-Cabe destacar que, no ato da celebração da parceria, o Proponente deverá estar adimplente junto aos sistemas CAUC e Regularidade Transferegov, no que couber. Caso seja constatado qualquer registro de inadimplência, a celebração da parceria ficará inviabilizada.
-
-Além disso, o Proponente deverá possuir cadastro de usuário externo no Sistema Eletrônico de Informações (SEI) junto ao Ministério do Esporte, para possibilitar a assinatura do instrumento. Caso o Representante Legal ainda não possua cadastro, este deverá ser realizado pelo seguinte link:
-
-https://sei.cidadania.gov.br/sei/controlador_externo.php?acao=usuario_externo_logar&id_orgao_acesso_externo=0 
-
-Após o cadastro, o dirigente da entidade deverá enviar a relação da documentação necessária, por meio do Protocolo Digital do Ministério do Esporte, para fins de ativação do acesso, conforme mensagem automática enviada ao e-mail vinculado ao cadastro.
-
-Observação: Esta é uma mensagem automática. Favor desconsiderar caso a documentação supramencionada tenha sido apresentada integralmente antes da emissão deste Parecer.
-
-Permanecemos à disposição por meio dos endereços eletrônico: fabiana.coutinho@esporte.gov.br; gilmar.silva@esporte.gov.br; : luiz.boucher@esporte.gov.br, com cópia para cgfp.sneaelis@esporte.gov.br, ou ainda através dos números: (61) 3020-7471 / 3020-6952 / 3020-7469. 
-
-Atenciosamente,
-
-Coordenação-Geral de Formalização de Parcerias.'''
-
-    text_tf = r'''Prezado Proponente,
-
-Com vistas ao adequado andamento das etapas de análise e celebração das parcerias, informamos que foram designados pontos focais para atendimento e esclarecimento de dúvidas específicas relacionadas aos seguintes temas:
-
-- Projeto Técnico-Pedagógico: dúvidas quanto à elaboração, estrutura, coerência entre objetivos, metas e atividades, bem como adequação da proposta apresentada à ação orçamentária 20JP. 
-Contato: Carla Prado Novais – (61) 3217-9530
-E-mail: carla.novais@esporte.gov.br
-
-- Custos e Requisitos para Celebração: dúvidas sobre a composição de custos, itens orçamentários, contrapartida, documentação necessária e demais exigências para formalização da parceria. 
-Contato: Luiz Phellipe Boucher Silva – (61) 3020-6952
-E-mail: luiz.boucher@esporte.gov.br, com cópia para cgfp.snealis@esporte.gov.br
-
-- Acompanhamento e Execução: dúvidas sobre estruturação do projeto, início de atendimento, contratações, ajuste de plano de trabalho, prorrogação de vigência e demais dúvidas quanto as ações durante a execução da parceria. 
-Contato: Rayane Naiva De Sousa – (61) 3020-7770
-E-mail: rayane.sousa@esporte.gov.br.
-
-Ressaltamos a importância de que os questionamentos sejam encaminhados ao ponto focal correspondente ao tema, de modo a garantir maior agilidade e precisão nas respostas.
-
-Atenciosamente,
-
-Coordenação-Geral de Formalização de Parcerias.
-'''
-
-    webinar_invite = '''Prezados, 
-
-O Secretário Nacional de Esporte Amador, Lazer e Inclusão Social, Paulo Henrique Perna Cordeiro, tem a honra de convidá-los para participar de Webinar de Orientações para Celebração de Parcerias, que tem por objetivo de subsidiar a formalização de parcerias voltadas à implementação de políticas públicas de esporte amador, educação, lazer e inclusão social.
-
-Ressalta-se que esta Secretaria está conduzindo o processo de operacionalização de mais de 6.000, o que demanda o cumprimento rigoroso dos prazos e o envio tempestivo das informações e documentos solicitados. O atraso no encaminhamento integral das documentações solicitadas pode comprometer a análise técnica e, consequentemente, o cronograma de celebração das parcerias, acarretando risco de perda dos recursos destinados.
-
-Neste sentido, visto que nas propostas apresentadas pelos destinatários desta comunicação, foram identificadas pendências de dados e/ou documentos indispensáveis à celebração da parceria, encaminha-se o link para participação na referida reunião, que será realizado no dia 29 de outubro de 2025 (quarta-feira), às 11h, por meio do link a seguir: 
-
-https://teams.microsoft.com/l/meetup-join/19%3ameeting_Y2Q5Y2YwNGUtZmRhOS00ZGQyLTg4YzItZTgwMjliOTkwZjlj%40thread.v2/0?context=%7b%22Tid%22%3a%2249e66e23-2e11-4c98-9799-c02815282bd6%22%2c%22Oid%22%3a%227a8c9849-69ac-4ae3-b0e9-5dd5f392856a%22%7d
-
-Contamos com a participação de todos para o êxito na condução dos processos e na efetiva implementação das políticas públicas de esporte, lazer e inclusão social.
-
-Atenciosamente,
-
-Secretaria Nacional de Esporte Amador, Lazer e Inclusão Social
-Ministério do Esporte
-'''
-
-    #xlsx_source_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-    #                    r'Social\Teste001\fabi_DFP\Propostas Para Diligências Padrão.xlsm')
-
     xlsx_source_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
                         r'Social\Teste001\fabi_DFP\Relação Proponentes Live.xlsx')
 
@@ -528,7 +452,7 @@ Ministério do Esporte
     sheet_names = excel_file.sheet_names
 
     # Initiate automation instance
-    robo = PWRobo(text_tf=text_tf, text_conv=text_conv, webinar_invite=webinar_invite)
+    robo = PWRobo()
 
     robo.land_page()
     robo.init_search()
@@ -548,19 +472,48 @@ Ministério do Esporte
 
             for idx, row in df.iterrows():
                 try:
-                    feedback_ = False
-                    proposal_done = row["Preenchidos"]
-                    prop_num = row['Nº Proposta']
+                    proposal_done = row["xxxx"]
+
+                    prop_num = row['Xxxxx']
+
+                    pending_req = row['XXXXX']
+
+                    tech_phone_number = row['XXXXX']
+
+                    tech_email = row['XXXXX']
+
+
                     if proposal_done == "Feito":
                         print(f"Proposal: {prop_num} already filled")
                         continue
+
+                    pending_list = robo.create_pending_list(pending_req)
+
+                    text_conv = rf''' 
+                        Prezado Convenente,
+
+                    Da análise da documentação inserida no Transferegov, constatamos as seguintes pendências:
+
+                    {pending_list}
+
+                    Cumprida integralmente esta diligência, esta Coordenação dará prosseguimento às etapas necessárias para formalização, cabendo ao Proponente apresentar o Termo de Referência e documentos correlatos (Projeto Técnico, Cotações e Planilha de Custos), no prazo de 09 (nove) meses a contar da assinatura do Instrumento, conforme determina a legislação vigente.
+
+                    Por fim, colocamo-nos à disposição por meio do telefone (61) {tech_phone_number} ou através do endereço \
+                    eletrônico: \
+                    {tech_email}, com cópia para cgfp.sneaelis@esporte.gov.br. 
+
+                    Atenciosamente,
+
+                    Coordenação-Geral de Formalização de Parcerias
+
+                        '''
 
                     print("\n", f"{'⚡' * 3}🚀 EXECUTING PROPOSAL: {prop_num}, index: {idx} "
                                f"🚀{'⚡' * 3}".center(70,
                            '='), '\n')
 
-                    robo.loop_search(prop_num, idx)
-                    feedback_ = robo.insert_feedback(type_txt=i)
+                    robo.loop_search(prop_num, idx, text_conv)
+                    feedback_ = robo.insert_feedback(type_txt=i) # REFACTOR THE RETURN VALUES!!!!
 
                     if feedback_ is True:
                         robo.mark_proposal_done(df=df, proposal_num=prop_num, file_path=xlsx_source_path,
