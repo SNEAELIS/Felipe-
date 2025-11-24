@@ -42,6 +42,9 @@ class Robo:
             self.chrome_options = webdriver.ChromeOptions()
             # Endereço de depuração para conexão com o Chrome
             self.chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
+            # Garante que nenhuma "Tab Search" seja aberta ao iniciar
+            self.chrome_options.add_argument('--disable-features=TabSearch')
+            self.chrome_options.add_argument('--disable-component-extensions-with-background-pages')
             try:
                 # Inicializa o driver do Chrome com as opções e o gerenciador de drivers
                 self.driver = webdriver.Chrome(options=self.chrome_options)
@@ -55,14 +58,16 @@ class Robo:
             # Defines Logger
             self.logger = self.setup_logger()
 
-            print("✅ Conectado ao navegador existente com sucesso.")
+            print(f"✅ Controle sobre a na página {self.driver.title}.")
+
+
         except WebDriverException as e:
             # Imprime mensagem de erro se a conexão falhar
             print(f"❌ Erro ao conectar ao navegador existente: {e}")
             # Define o driver como None em caso de falha na conexão
             self.driver = None
 
-    def webdriver_element_wait(self, xpath: str):
+    def webdriver_element_wait(self, xpath: str, tm_ot: int=8):
         """
                 Espera até que um elemento web esteja clicável, usando um tempo limite máximo de 3 segundos.
 
@@ -77,7 +82,7 @@ class Robo:
                 """
         # Cria uma instância de WebDriverWait com o driver e o tempo limite e espera o elemento ser clicável
         try:
-            return WebDriverWait(self.driver, 8).until(EC.element_to_be_clickable((By.XPATH, xpath)))
+            return WebDriverWait(self.driver, tm_ot).until(EC.element_to_be_clickable((By.XPATH, xpath)))
         except Exception as e:
             raise e
 
@@ -198,7 +203,7 @@ class Robo:
 
     # Insere o código na janela de seleção de município
     def cod_mun(self, cod_municipio):
-        print(f"{'🔎' * 3}🏙️ BUSCANDO CÓDIGO DO MUNICÍPIO 🏙️{'🔎' * 3}".center(80, '='))
+       #print(f"{'🔎' * 3}🏙️ BUSCANDO CÓDIGO DO MUNICÍPIO 🏙️{'🔎' * 3}".center(80, '='))
 
         try:
             WebDriverWait(self.driver, 20).until(EC.number_of_windows_to_be(2))
@@ -339,12 +344,10 @@ class Robo:
                 if btn_incluir.get_attribute("value") == 'Incluir':
                     btn_incluir.click()
                 else:
-                    self.consulta_proposta()
                     raise BreakInnerLoop
             except Exception:
                 self.logger.info(f'Botão de incluir não localizado, pulando processo: {numero_processo}')
                 print(f'🔘)💤 Botão de incluir não localizado, pulando processo: {numero_processo}')
-                self.consulta_proposta()
                 raise BreakInnerLoop
 
             lista_campos = [
@@ -368,22 +371,40 @@ class Robo:
 
             for idx, row in df.iterrows():
                 try:
-                    alerta_valor = self.driver.find_element('//*[@id="messages"]/div')
-                    if alerta_valor:
-                        print('⚠️💸 Total do valor da proposta excedeu a contrapartida financeira')
+                    alerta_valor = self.webdriver_element_wait(
+                        '/html/body/div[3]/div[14]/div[3]', 1).text
+
+                    print(alerta_valor)
+                    ref_value = ('O valor da soma de todos os bens e serviços adquiridos com recursos do '
+                                 'instrumento está superior a soma do repasse da proposta mais a '
+                                 'contrapartida financeira da proposta')
+
+                    if alerta_valor == ref_value:
+                        print('⚠️💸 Total do valor da proposta excedeu a contrapartida financeira\n')
                         self.logger.info(f'Total do valor da proposta: {numero_processo} excedeu a '
                                          f'contrapartida financeira')
-                        self.consulta_proposta()
                         raise BreakInnerLoop
-                except Exception:
+                except BreakInnerLoop:
+                    print('Raising value overload exception')
+                    self.delete_path(path=caminho_arquivo_fonte)
+                    raise BreakInnerLoop
+
+                except:
                     pass
+                # Check if the total value is zero or Nan
+                valor_total = (row.iloc[24])
+                if pd.isna(valor_total) or valor_total == 'nan' or valor_total == 'N/A' or valor_total == '0':
+                    print('Valor não encontrado ou igual a zero\n')
+                    continue
 
                 # Lê a planilha guia, com marcação dos itens já feitos
                 # Verifica se alguma linha já foi executada
                 if status_df.iloc[idx, 1] == 'feito':
                     print(f'Linha {idx} já executada. Pulando linha\n')
                     continue
+
                 print(f"Preenchendo item nº:{idx} {str(row.iloc[2])}\n".center(50))
+
                 try:
                     # Descrição do item
                     desc_item_txt = str(row.iloc[2]) + ': ' + str(row[3])
@@ -407,7 +428,7 @@ class Robo:
                         un_fornecimento = 'MÊS'
                     elif un_fornecimento in ['unidade', 'unidades']:
                         un_fornecimento = 'UN'
-                    elif un_fornecimento in ['diaria', 'diária', 'diárias', 'benefícios/dia']:
+                    elif un_fornecimento in ['diaria', 'diária', 'diárias', 'benefícios/dia', 'partida']:
                         un_fornecimento = 'DIA'
                     elif un_fornecimento in ['metro']:
                         un_fornecimento = 'M'
@@ -426,10 +447,6 @@ class Robo:
                     un_forn_field.send_keys(un_fornecimento)
 
                     # Valor Total
-                    valor_total = (row.iloc[24])
-                    if pd.isna(valor_total) or valor_total == 'nan' or valor_total == 'N/A':
-                        print('Valor não encontrado ou igual a zero\n')
-                        continue
                     valor_total_rd = round(float(valor_total), 2)
                     formated_value = f'{valor_total_rd:.2f}'
 
@@ -515,13 +532,18 @@ class Robo:
         choices = dict_cod.keys()
 
         try:
-            # Check if the string, after normilized, is compatible with any key
+            # Check if the string, after normalized, is compatible with any key
             if norm in dict_cod:
                 return dict_cod.get(norm)
 
             # Check if the string has any similarity with some key, threshhold is 80%
             best, score = process.extractOne(query=norm, choices=choices, scorer=fuzz.ratio)
             if score < threshhold:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                if exc_tb is not None:
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                else:
+                    print("Error occurred but no traceback available")
                 print(f"\n‼️ Falha ao identificar código de natureza de despesa.")
                 sys.exit("Parando o programa.")
 
@@ -682,8 +704,9 @@ class Robo:
                                if not unicodedata.combining(c))
 
             categories = {
-                'BEM': ['Material Esportivo', 'Uniformes'],
-                'SERVICO': ['Recursos Humanos', 'Administrativa', 'Serviços', 'Identidades/Divulgações'],
+                'BEM': ['Material Esportivo', 'Uniformes', 'Alimentação', 'Bem'],
+                'SERVICO': ['Recursos Humanos', 'Administrativa', 'Serviços', 'Identidades/Divulgações',
+                            'Eventos', 'SERVIÇO'],
                 'OBRA': ['obra'],
                 'TRIBUTO': ['tributo'],
                 'OUTROS': ['']
@@ -694,10 +717,43 @@ class Robo:
             if tipo_gov != '':
                 return tipo_gov
             else:
+                print(f'Falha ao mapear {tipo} em alguma categoria. Parando execução do script')
                 sys.exit()
         except Exception as e:
             print(f"❌ Erro no processamento do texto: {type(e).__name__} - {str(e)[:100]}")
             return None
+
+
+# Get's a text and map to a specific type of expenditure, if more than one, group them and return
+def map_description(grouped_df):
+    try:
+        bem_indices = []
+
+        for idx, row in grouped_df.iterrows():
+            text = str(row.iloc[2])
+            normalized = text.lower().strip()
+            normalized = re.sub(r'áàâãä', 'a', normalized)
+            normalized = re.sub(r'[^a-z0-9\s]', '', normalized)
+
+            # Check for agua mineral patterns
+            patterns = [
+                r'agua mineral', r'aguamineral', r'agua.*mineral', r'mineral.*agua',
+                r'kit lanche', r'kitlanche', r'kit.*lanche', r'lanche.*kit', r'kits lanche'
+            ]
+
+            # Check if this row matches any BEM pattern
+            if any(re.search(pattern, normalized) for pattern in patterns):
+                bem_indices.append(idx)
+
+        # Create separate DataFrames
+        bem_df = grouped_df.loc[bem_indices] if bem_indices else pd.DataFrame()
+        servico_df = grouped_df.drop(bem_indices) if bem_indices else grouped_df.copy()
+
+        return {"BEM": bem_df, "SERVICO": servico_df}
+
+    except Exception as e:
+        print(f"Error in map_description. Error_Type: {type(e).__name__}.\nError: {str(e)[:100]}")
+        return pd.DataFrame(), pd.DataFrame()
 
 def main() -> None:
     # Caminho do arquivo .xlsx que contem os dados necessários para rodar o robô
@@ -706,7 +762,6 @@ def main() -> None:
     try:
         # Instancia um objeto da classe Robo
         robo = Robo()
-        # Extrai dados de colunas específicas do Excel
     except Exception as e:
         print(f"\n‼️ Erro fatal ao iniciar o robô: {e}")
         sys.exit("Parando o programa.")
@@ -714,22 +769,21 @@ def main() -> None:
     for root, dirs, files in os.walk(dir_path):
         for filename in files:
             if filename.endswith('.xlsx'):
-                if root == dir_path:
-                    path = os.path.join(root, filename)
-                else:
-                    path = root
                 caminho_arquivo_fonte = os.path.join(root, filename)
+
                 print(f"\n{'⚡' * 3}🚀 EXECUTING FILE: {filename} 🚀{'⚡' * 3}".center(70, '=')
                       , '\n')
+
                 # Referência para o código de natureza da despesa
                 cod_natureza_despesa = {
+                    'eventos': '33903999',
                     'servicos': '33903999',
                     'recursos_humanos': '33903999',
                     'material': '33903014',
                     'uniforme': '33903023',
                     'impressos': '33903063',
                     'premiacao': '33903004',
-                    'hidratacao_alimentacao': '33903007',
+                    'alimentacao': '33903007',
                     'encargos_trab': '33903918',
                     'material_esportivo': '33903014',
                     'identidades/divulgações': '33903963',
@@ -773,11 +827,11 @@ def main() -> None:
                     val = str(val).lower()
                     unique_values.append(val)
 
+                # Get the status sheet and forward to row analysis, if;'Feito'; >>>> continues
                 status_df = pd.read_excel(caminho_arquivo_fonte, dtype=str, sheet_name='Status')
+
                 for value in unique_values:
                     try:
-                        if value == 'eventos' or value == 'alimentação':
-                            continue
                         grouped_df = df[df[1].str.lower().str.contains(value, na=False)]
 
                         print(f"Executing for {value}\n"
@@ -786,6 +840,51 @@ def main() -> None:
 
                         if grouped_df.empty:
                             continue
+                        if value == 'eventos' or value == 'alimentação':
+                            for idx, row in grouped_df.iterrows():
+                                # Lê a planilha guia, com marcação dos itens já feitos
+                                # Verifica se alguma linha já foi executada
+                                if status_df.iloc[idx, 1] == 'feito':
+                                    print(f'Linha {idx} já executada. Pulando linha\n')
+                                    continue
+                                else:
+                                    break
+                            else:
+                                continue
+
+                            df_dict = map_description(grouped_df)
+
+                            for df_type, df in df_dict.items():
+                                if not df.empty:
+                                    if df_type == 'BEM':
+                                        value = 'alimentacao'
+                                    else:
+                                        value = 'Serviços'
+
+                                    try:
+                                        robo.loop_de_pesquisa(df=df,
+                                                              numero_processo=numero_processo,
+                                                              tipo_desp=value,
+                                                              cod_natur_desp=robo.map_cod_natur_desp(
+                                                                  dict_cod=cod_natureza_despesa,
+                                                                  cod=value
+                                                              ),
+                                                              cnpj_xlsx=cnpj_xlsx,
+                                                              caminho_arquivo_fonte=caminho_arquivo_fonte
+                                                              )
+                                    except BreakInnerLoop:
+                                        print("⚠️ Stopping this unique_values loop early.")
+                                        break
+                                    except KeyboardInterrupt:
+                                        print("Script stopped by user (Ctrl+C). Exiting cleanly.")
+                                        sys.exit(0)  # Exit gracefully
+                                    except Exception as e:
+                                        exc_type, exc_value, exc_tb = sys.exc_info()
+                                        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                                        print(
+                                            f"❌ Falha ao executar script. Erro: {type(e).__name__}\n{str(e)[:100]}")
+                                        sys.exit(0)  # Exit gracefully
+
                         for idx, row in grouped_df.iterrows():
                             # Lê a planilha guia, com marcação dos itens já feitos
                             # Verifica se alguma linha já foi executada
@@ -829,9 +928,9 @@ def main() -> None:
 
 if __name__ == "__main__":
 
-    main()
-
-    r""" for i in range(20):
+     main()
+'''
+    for i in range(20):
         cycle_start = time.time()
         print(f"\n{'=' * 50}")
         print(f"🔄 CYCLE {i + 1}/20 started at: {datetime.now().strftime('%H:%M:%S')}")
@@ -842,5 +941,5 @@ if __name__ == "__main__":
         cycle_time = time.time() - cycle_start
 
         print(f"\n⏱️ Cycle {i + 1} took: {cycle_time / 60:.2f} minutes")
-        time.sleep(1600)"""
-
+        time.sleep(1600)
+'''

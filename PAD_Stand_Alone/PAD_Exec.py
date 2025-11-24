@@ -3,13 +3,18 @@ import time
 import sys
 import re
 import unicodedata
-import tempfile
+import shutil
 import requests
 import threading
 import random
+import subprocess
 
 import pandas as pd
 import numpy as np
+
+import undetected_chromedriver as uc
+
+import pyautogui
 
 from pandas import ExcelWriter
 
@@ -17,8 +22,11 @@ from colorama import Fore
 
 from thefuzz import process, fuzz
 
-from selenium import webdriver
-from selenium.common import WebDriverException, TimeoutException, NoSuchElementException
+from selenium.common import (WebDriverException,
+                             TimeoutException,
+                             NoSuchElementException,
+                             SessionNotCreatedException
+                             )
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import Select
@@ -33,7 +41,7 @@ class BreakInnerLoop(Exception):
 
 class Robo:
     # Inicia as principais instâncias do programa e define alguns objetos importantes
-    def __init__(self, headless=False, gui_callback=None):
+    def __init__(self, gui_callback=None):
         """
         Inicializa o objeto Robo, configurando e iniciando o driver do Chrome.
         """
@@ -51,54 +59,50 @@ class Robo:
         self.gui_callback = gui_callback
 
         try:
-            # Configuração do Chrome
-            self.chrome_options = webdriver.ChromeOptions()
-
-            # Configurações para modo standalone
-            self.chrome_options.add_argument("--no-first-run")
-            self.chrome_options.add_argument("--incognito")
-            self.chrome_options.add_argument("--no-default-browser-check")
-            self.chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-            self.chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-            self.chrome_options.add_experimental_option('useAutomationExtension', False)
-
-            # Additional anti-detection options
-            self.chrome_options.add_argument("--disable-blink-features")
-            self.chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-            self.chrome_options.add_argument("--disable-dev-shm-usage")
-            self.chrome_options.add_argument("--no-sandbox")
-            self.chrome_options.add_argument("--disable-extensions")
-            self.chrome_options.add_argument("--disable-plugins")
-            self.chrome_options.add_argument("--disable-images")
-            self.chrome_options.add_argument("--disable-javascript")  # Use cautiously
-            self.chrome_options.add_argument(
-                "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, "
-                "like Gecko) Chrome/120.0.0.0 Safari/537.36")
-
-            # Remove automation flags
-            self.chrome_options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
-            self.chrome_options.add_experimental_option('useAutomationExtension', False)
-
-            if not headless:
-                self.chrome_options.add_argument("--start-maximized")
-            else:
-                sys.exit(0)
-
-            # Usar um perfil temporário específico
-            temp_dir = tempfile.mkdtemp()
-            self.chrome_options.add_argument(f"--user-data-dir={temp_dir}")
-
             # Inicializa o driver do Chrome
-            self.driver = webdriver.Chrome(options=self.chrome_options)
+            self.driver = uc.Chrome(
+                headless=False,
+                version_main=None,
+                options=self.create_chrome_options()
+            )
 
             self.add_stealth_measures()
 
             print("✅ Navegador Chrome iniciado com sucesso.")
+        except SessionNotCreatedException:
+            chrome_version = self.get_chrome_version()
+            driver_created = False
+
+            if chrome_version:
+                for version in [chrome_version, chrome_version-1, chrome_version+1]:
+                    try:
+                        self.driver = uc.Chrome(
+                                headless=False,
+                                version_main=version,
+                                #options=self.create_chrome_options()
+                            )
+                        self.add_stealth_measures()
+                        print(f"✅ Sucesso com versão {version}")
+                        driver_created = True
+                        break
+
+                    except Exception as e:
+                        print(f'Falha ao encontar uma versão que funcione.\nError type: {type(e).__name__} '
+                              f'\nError: {str(e)[:200]}')
+                        continue
+
+                if not driver_created:
+                    raise Exception("No compatible version found")
+
+            else:
+                raise Exception("Could not detect Chrome version")
 
         except WebDriverException as e:
-            print(f"❌ Erro ao iniciar o navegador: {e}")
-            self.driver = None
-
+            print(f"❌ Erro ao instanciar o driver.\nError type: {type(e).__name__}\nError: {str(e)[:200]}")
+            sys.exit(1)
+        except:
+            print(f"❌ Erro fatal !")
+            sys.exit(1)
 
     def add_stealth_measures(self):
         """Add additional stealth measures to avoid detection"""
@@ -126,6 +130,29 @@ class Robo:
                 pass
 
 
+    # Detecta a versão do Chrome
+    def get_chrome_version(self):
+        try:
+            commands = [
+                ['google-chrome', '--version'],
+                ['chromium', '--version'],
+                ['reg', 'query', 'HKEY_CURRENT_USER\\Software\\Google\\Chrome\\BLBeacon', '/v', 'version']
+            ]
+
+            for cmd in commands:
+                try:
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                    if result.returncode == 0:
+                        version_match = re.search(r'(\d+)\.\d+\.\d+\.\d+', result.stdout)
+                        if version_match:
+                            return int(version_match.group(1))
+                except:
+                    continue
+
+            return None
+
+        except:
+            return None
 
 
     def check_captcha(self):
@@ -166,10 +193,20 @@ class Robo:
 
         print("🟢 CAPTCHA solved - resuming execution...")
 
+        # Make sure the page is in good state
+        WebDriverWait(self.driver, 7).until(
+            lambda driver: driver.execute_script("return document.readyState") == "complete"
+        )
+        time.sleep(2)
+
 
     def resume_after_captcha(self):
         self.captcha_solved = True
         self.captcha_event.set()
+        try:
+            self.driver.switch_to.default_content()
+        except:
+            pass
         print("✅ Resume signal received from GUI")
 
 
@@ -178,7 +215,7 @@ class Robo:
         """Navega para o website configurado após a inicialização do driver."""
 
         if not self.driver:
-            print("❌ Navegador não inicializado. Não é possível navegar para o website.")
+            print("❌ Driver não inicializado. Não é possível navegar para o website.")
             self.close()
             return False
 
@@ -220,24 +257,43 @@ class Robo:
         def human_type(element, text):
             for char in text:
                 element.send_keys(char)
-                time.sleep(random.uniform(0.2, 0.5))
+                time.sleep(random.uniform(0.05, 0.22))
+
+        def human_mouse_move(elmt):
+            return False
+            try:
+                # Get element coordinates
+                element_location = elmt.location
+                element_size = elmt.size
+
+                # Calculate the element's bounding box
+                left
+                y = element_location['y'] + element_size['height'] // 2
+
+                # Add some randomness to avoid clicking exactly in center
+                x += random.randint(-10, 10)
+                y += random.randint(-10, 10)
+
+                pyautogui.moveTo(x, y, duration=random.uniform(0.5, 1.2))
+
+                time.sleep(random.uniform(0.05, 0.15))
+
+                pyautogui.click()
+
+                return True
+
+            except:
+                print(f"❌ PyAutoGUI click failed: {str(e)[:100]}")
+                return False
+
+
         try:
             # Initiate login process
             log_in_btn = self.webdriver_element_wait('//*[@id="form_submit_login"]')
-            time.sleep(1)
-            log_in_btn. click()
-
-            # Try to login in another tab
-            self.driver.get(self.driver.current_url)
-            self.driver.find_element_by_tag_name('body').send_keys(Keys.CONTROL + 't')
-
-            # Close the first tab
-            # Get all window handles
-            all_tabs = self.driver.window_handles
-            # Switch to first tab
-            self.driver.switch_to.window(all_tabs[0])
-            # Close first tab
-            self.driver.close()
+            if human_mouse_move(log_in_btn):
+                print("✅ Human-like click performed")
+            else:
+                log_in_btn. click()
 
             # Fill in the credentials field
             credentials_field = self.webdriver_element_wait('//*[@id="accountId"]')
@@ -250,13 +306,17 @@ class Robo:
             if self.check_captcha():
                 self.handle_captcha()
 
-            psswd_field = self.webdriver_element_wait('//*[@id="passwordId"]')
+            self.driver.switch_to.default_content()
+
+            psswd_field = self.webdriver_element_wait('//*[@id="password"]')
             human_type(element=psswd_field,text=self.__passcode)
             # Click to enter
             time.sleep(0.7)
-            self.driver.find_element(By.XPATH, '//*[@id="submit-button"]')
+            self.webdriver_element_wait('//*[@id="submit-button"]').click()
 
         except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print(Fore.RED + f'🔴📄 Erro ao tentar fazer o login. \nErro: {e}')
             self.close()
             sys.exit(1)
@@ -702,7 +762,7 @@ class Robo:
             sys.exit("Parando o programa.")
 
 
-    def main(self, caminho_arquivo_fonte) -> None:
+    def main(self, files: list) -> None:
         # Referência para o código de natureza da despesa
         cod_natureza_despesa = {
             'servicos': '33903999',
@@ -720,98 +780,101 @@ class Robo:
             'tributo': '33904718'
         }
 
-        # DataFrame do arquivo excel
-        df = self.extrair_dados_excel(caminho_arquivo_fonte=caminho_arquivo_fonte)
+        for idx, file in enumerate(files, start=1):
+            print(f"▶️ ({idx}/{len(files)}) Processando: {file}")
+            # DataFrame do arquivo excel
+            df = self.extrair_dados_excel(caminho_arquivo_fonte=file)
 
-        try:
-            pd.read_excel(caminho_arquivo_fonte, dtype=str, sheet_name='Status')
-            print(f'Sheet found!')
-        except ValueError:
-            print(f'Sheet NOT found !')
-            print(f'Creating Sheet !')
-            # Create new status DataFrame if sheet doesn't exist
-            status_df = pd.DataFrame({
-                'Index': df.index,
-                'Status': [''] * len(df)
-            })
-            with pd.ExcelWriter(caminho_arquivo_fonte, engine='openpyxl', mode='a',
-                                if_sheet_exists='replace') as writer:
-                status_df.to_excel(writer, sheet_name='Status', index=False)
-
-        # Navegate to desired website
-        self.navegate_to_transfgov()
-
-        # Initiate login
-        self.log_in()
-
-        # inicia consulta e leva até a página de busca do processo
-        self.consulta_proposta()
-
-        numero_processo_temp = df.iloc[0,1]
-        numero_processo = self.fix_prop_num(numero_processo_temp)
-
-        cnpj_xlsx = df.loc[df[0] == 'CNPJ:', 1].iloc[0]
-
-        unique_values = []
-        unique_values_col_b = df[1].unique()
-        # first occurrence index
-        unique_idx = np.where(unique_values_col_b == 'TIPO')[0][0]
-        unique_values_temp = unique_values_col_b[unique_idx+1:]
-        for val in unique_values_temp:
-            val = str(val).lower()
-            unique_values.append(val)
-
-        status_df = pd.read_excel(caminho_arquivo_fonte, dtype=str, sheet_name='Status')
-        for value in unique_values:
             try:
-                if value == 'eventos' or value == 'alimentação':
-                    continue
-                grouped_df = df[df[1].str.lower().str.contains(value, na=False)]
+                pd.read_excel(file, dtype=str, sheet_name='Status')
+                print(f'Sheet found!')
+            except ValueError:
+                print(f'Sheet NOT found !')
+                print(f'Creating Sheet !')
+                # Create new status DataFrame if sheet doesn't exist
+                status_df = pd.DataFrame({
+                    'Index': df.index,
+                    'Status': [''] * len(df)
+                })
+                with pd.ExcelWriter(file, engine='openpyxl', mode='a',
+                                    if_sheet_exists='replace') as writer:
+                    status_df.to_excel(writer, sheet_name='Status', index=False)
 
-                print(f"Executing for {value}\n"
-                      f"Number of rows in grouped_df: {len(grouped_df)}"
-                      .center(50, '-'), '\n')
+            # Navegate to desired website
+            self.navegate_to_transfgov()
 
-                if grouped_df.empty:
-                    continue
-                for idx, row in grouped_df.iterrows():
-                    # Lê a planilha guia, com marcação dos itens já feitos
-                    # Verifica se alguma linha já foi executada
-                    if status_df.iloc[idx, 1] == 'feito':
-                        print(f'Linha {idx} já executada. Pulando linha\n')
+            # Initiate login
+            self.log_in()
+
+            # inicia consulta e leva até a página de busca do processo
+            self.consulta_proposta()
+
+            numero_processo_temp = df.iloc[0,1]
+            numero_processo = self.fix_prop_num(numero_processo_temp)
+
+            cnpj_xlsx = df.loc[df[0] == 'CNPJ:', 1].iloc[0]
+
+            unique_values = []
+            unique_values_col_b = df[1].unique()
+            # first occurrence index
+            unique_idx = np.where(unique_values_col_b == 'TIPO')[0][0]
+            unique_values_temp = unique_values_col_b[unique_idx+1:]
+            for val in unique_values_temp:
+                val = str(val).lower()
+                unique_values.append(val)
+
+            status_df = pd.read_excel(file, dtype=str, sheet_name='Status')
+            for value in unique_values:
+                try:
+                    if value == 'eventos' or value == 'alimentação':
                         continue
-                    else:
-                        break
-                else:
-                    continue
+                    grouped_df = df[df[1].str.lower().str.contains(value, na=False)]
 
-                self.loop_de_pesquisa(df=grouped_df,
-                                          numero_processo=numero_processo,
-                                          tipo_desp=value,
-                                          cod_natur_desp=self.map_cod_natur_desp(
-                                                dict_cod=cod_natureza_despesa,
-                                                cod=value
-                                                ),
-                                          cnpj_xlsx=cnpj_xlsx,
-                                          caminho_arquivo_fonte = caminho_arquivo_fonte
-                                          )
-            except BreakInnerLoop:
-                print("⚠️ Stopping this unique_values loop early.")
-                break
-            except KeyboardInterrupt:
-                print("Script stopped by user (Ctrl+C). Exiting cleanly.")
-                self.close()
-                sys.exit(0) # Exit gracefully
-            except Exception as e:
-                exc_type, exc_value, exc_tb = sys.exc_info()
-                print(f"Error occurred at line: {exc_tb.tb_lineno}")
-                print(f"❌ Falha ao executar script. Erro: {type(e).__name__}\n{str(e)[:100]}")
-                self.close()
-                sys.exit(0)  # Exit gracefully
+                    print(f"Executing for {value}\n"
+                          f"Number of rows in grouped_df: {len(grouped_df)}"
+                          .center(50, '-'), '\n')
+
+                    if grouped_df.empty:
+                        continue
+                    for idx, row in grouped_df.iterrows():
+                        # Lê a planilha guia, com marcação dos itens já feitos
+                        # Verifica se alguma linha já foi executada
+                        if status_df.iloc[idx, 1] == 'feito':
+                            print(f'Linha {idx} já executada. Pulando linha\n')
+                            continue
+                        else:
+                            break
+                    else:
+                        continue
+
+                    self.loop_de_pesquisa(df=grouped_df,
+                                              numero_processo=numero_processo,
+                                              tipo_desp=value,
+                                              cod_natur_desp=self.map_cod_natur_desp(
+                                                    dict_cod=cod_natureza_despesa,
+                                                    cod=value
+                                                    ),
+                                              cnpj_xlsx=cnpj_xlsx,
+                                              caminho_arquivo_fonte = file
+                                              )
+                except BreakInnerLoop:
+                    print("⚠️ Stopping this unique_values loop early.")
+                    break
+                except KeyboardInterrupt:
+                    print("Script stopped by user (Ctrl+C). Exiting cleanly.")
+                    self.close()
+                    sys.exit(0) # Exit gracefully
+                except Exception as e:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                    print(f"❌ Falha ao executar script. Erro: {type(e).__name__}\n{str(e)[:100]}")
+                    self.close()
+                    sys.exit(0)  # Exit gracefully
+            else:
+                self.delete_path(file)
         else:
             self.close()
             sys.exit(0)  # Exit gracefully
-
 
     @staticmethod
     def municipios_xslx_source(relative_path):
@@ -930,3 +993,45 @@ class Robo:
                 print(f"Unable to fetch sessions: Status {response.status_code}")
         except Exception as e:
             print(f"Error checking sessions: {str(e)[:100]}")
+
+
+    # Create a new instance of Chrome Options
+    @staticmethod
+    def create_chrome_options():
+        chrome_options = uc.ChromeOptions()
+
+        # Suas configurações existentes
+        chrome_options.add_argument("--no-first-run")
+        #chrome_options.add_argument("--incognito")
+        chrome_options.add_argument("--no-default-browser-check")
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        chrome_options.add_argument("--disable-blink-features")
+        chrome_options.add_argument("--disable-dev-shm-usage")
+        chrome_options.add_argument("--no-sandbox")
+        chrome_options.add_argument("--disable-extensions")
+        chrome_options.add_argument("--disable-plugins")
+        chrome_options.add_argument("--start-maximized")
+
+        return chrome_options
+
+    # Delete file from specified directory
+    @staticmethod
+    def delete_path(path:str):
+        """
+        Deletes a file or directory.
+        - If it's a file → delete the file.
+        - If it's a directory → delete the entire directory tree.
+        """
+        if not os.path.exists(path):
+            print(f"⚠️ Path not found: {path}")
+            return
+
+        if os.path.isfile(path):
+            os.remove(path)
+
+            print(f"🗑️ File deleted: {path}")
+        elif os.path.isdir(path):
+            shutil.rmtree(path)
+            print(f"🗑️ Directory deleted: {path}")
+        else:
+            print(f"⚠️ Unknown type (not file/dir): {path}")
