@@ -1,18 +1,8 @@
-import logging.handlers
-import subprocess
-import fitz  # PyMuPDF
-import io
 from PIL import Image
-from pdf2image import convert_from_path
-import img2pdf
-from PIL import Image
-import numpy as np
-import logging
 import io
 import pdfplumber
 import base64
 from PyPDF2 import PdfReader, PdfWriter
-import requests
 from selenium.webdriver.chrome.options import Options
 from selenium import webdriver
 from selenium.common import WebDriverException, TimeoutException, NoSuchElementException
@@ -27,7 +17,6 @@ from datetime import datetime
 from selenium.webdriver import ActionChains
 from colorama import Fore, Style
 from pathlib import Path
-import pandas as pd
 import time
 import os
 import sys
@@ -38,774 +27,311 @@ import fitz  # PyMuPDF
 import pyautogui
 import re
 import zipfile
-
-def concatenate_excel_files(input_folder=None, output_file=None):
-    path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-            r'Social\Teste001\tabela Código da Natureza de Despesa.xlsx')
-    ref_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                r'Social\Teste001\atT00001 (3) (1).xlsx')
-
-    df = pd.read_excel(path)
-    print("Main DF columns:", df.columns.tolist())  # Debug print
-
-    ref_df = pd.read_excel(ref_path, header=None)
-    print("Reference DF columns:", ref_df.columns.tolist())  # Debug print
-
-    ref_df = ref_df.applymap(lambda x: str(x).strip().lower() if pd.notna(x) else '')
-
-    unique_values_col_b = ref_df[1].unique()
-    print("Unique values in reference:", unique_values_col_b)  # Debug print
-
-    try:
-        # first occurrence index
-        tipo_mask = [str(x).strip() == 'tipo' for x in unique_values_col_b]
-        unique_idx = np.where(tipo_mask)[0]
-        if len(unique_idx) == 0:
-            raise ValueError("'TIPO' not found in reference file's column B")
-        unique_idx = unique_idx[0]
-        unique_values_temp = unique_values_col_b[unique_idx+1:]
-    except Exception as e:
-        print(f"Error finding 'TIPO' marker: {str(e)}")
-        print("Values found:", unique_values_col_b)
-        return
-
-    unique_values = []
-    for val in unique_values_temp:
-       if isinstance(val, (str, int, float)):
-            if not val or val.startswith('<built-in method'):
-                continue
-            if '/' in val:
-                unique_values.extend([v.strip() for v in val.split('/') if v.strip()])
-            else:
-                unique_values.append(val.lower())
-    print(f"Unique values {unique_values}")
-
-
-    desc_col = next((col for col in df.columns if 'descrição' in str(col).lower()), None)
-
-    if not desc_col:
-        raise ValueError("Column 'Descrição' not found in the main DataFrame")
-
-    for value in unique_values:
-        # Print separator and DataFrame
-        print('\n' + '=' * 80 + '\n')  # Black line separator (using = for visibility)
-        print(f"Results for value: '{value}'\n")
-
-        safe_value = re.escape(value)
-        filtered_df = df[df['Descrição'].str.contains(safe_value, case=False, regex=True, na=False)]
-
-        # Print DataFrame with formatting
-        pd.set_option('display.max_rows', None)
-        with pd.option_context('display.max_columns', None):
-            print(filtered_df.to_string(index=False))
-        print('\n' + '=' * 80 + '\n')  # Black line separator
-
-
-def separate_nuclei():
-    def aid_func(filename):
-        pattern = r'Chamadas\s(.*?)(?:\.pdf|_compressed\.pdf|\.xlsx\.pdf|_compressed_compressed\.pdf)'
-        match = re.search(pattern, filename, re.IGNORECASE)
-        if match:
-            nucleus_name = match.group(1).strip()
-            return nucleus_name.replace('_.', '')
-        return None
-
-    dir_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                r'Social\SNEAELIS - Termo Fomento Inst. Léo Moura\Frequencia 926508')
-
-    for root, dirs, files in os.walk(dir_path):
-        if 'Frequencias 910782' in dirs:
-            dirs.remove('Frequencias 910782')
-        for filename in files:
-            if not filename.lower().endswith('.pdf'):
-                continue
-            nucleus = aid_func(filename)
-
-            if nucleus:
-                new_dir_path = os.path.join(root, nucleus)
-                if not os.path.exists(new_dir_path):
-                    print(f"Creating directory: {new_dir_path}")
-                    os.makedirs(new_dir_path)
-                source_file = os.path.join(root, filename)
-                destination_file = os.path.join(new_dir_path, filename)
-
-                print(f"Moving file: {filename} to {new_dir_path}")
-                shutil.move(source_file, destination_file)
-
-
-def pdf_to_xlsx():
-    def write_log(log_file, message):
-        """Write messages to log file"""
-        with open(log_file, 'a', encoding='utf-8') as f:
-            f.write(message + '\n')
-
-    def extract_tables_with_pdfplumber(pdf_source):
-        """Extract tables using pdfplumber with focus on area below 'Nº'"""
-        tables = []
-
-        with pdfplumber.open(pdf_source) as pdf:
-            for page in pdf.pages:
-                # Find the 'Nº' marker position
-                y_start = None
-                for word in page.extract_words():
-                    if word['text'].strip().upper() == 'Nº':
-                        y_start = word['top']
-                        break
-
-                if y_start is None:
-                    continue  # Skip if no Nº found
-
-                # Define crop area (everything below Nº)
-                crop_area = (0, y_start - 5, page.width, page.height)  # x0, top, x1, bottom
-
-                # Extract table from this region
-                cropped_page = page.crop(crop_area)
-                table = cropped_page.extract_table()
-
-                if table and len(table) > 1:  # Ensure we have at least header + one row
-                    tables.append(table)
-
-        return tables
-
-    dir_path = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
-                r"Social\SNEAELIS - Termo Fomento Inst. Léo Moura")
-
-    # Create log file
-    log_file = os.path.join(dir_path, f"conversion_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
-
-    for root, dirs, files in os.walk(dir_path):
-        if 'Frequencias 910782' in dirs:
-            dirs.remove('Frequencias 910782')
-        for filename in files:
-            if not filename.lower().endswith('.pdf'):
-                continue
-
-            pdf_path = os.path.join(root, filename)
-            xlsx_filename = filename.replace('.pdf', '.xlsx')
-            xlsx_path = os.path.join(root, xlsx_filename)
-
-            log_message = f"\nProcessing {filename}..."
-            print(log_message)
-            write_log(log_file, log_message)
-
-            try:
-                # Try with original PDF first
-                try:
-                    tables = extract_tables_with_pdfplumber(pdf_path)
-                    if tables:
-                        log_message = "Extracted tables with pdfplumber"
-                        print(log_message)
-                        write_log(log_file, log_message)
-                    else:
-                        raise ValueError("No tables found in initial extraction")
-                except Exception as e:
-                    log_message = f"Initial extraction failed, trying cleaned version: {str(e)[:200]}"
-                    print(log_message)
-                    write_log(log_file, log_message)
-
-                    # Clean PDF in memory
-                    pdf_reader = PdfReader(pdf_path)
-                    pdf_writer = PdfWriter()
-
-                    for page in pdf_reader.pages:
-                        if "/Annots" in page:
-                            del page["/Annots"]
-                        pdf_writer.add_page(page)
-
-                    # Create in-memory PDF bytes
-                    pdf_bytes = io.BytesIO()
-                    pdf_writer.write(pdf_bytes)
-                    pdf_bytes.seek(0)
-
-                    # Try extraction again with cleaned PDF
-                    tables = extract_tables_with_pdfplumber(pdf_bytes)
-                    if not tables:
-                        raise ValueError("All extraction methods failed")
-
-                # Save to Excel
-                with pd.ExcelWriter(xlsx_path) as writer:
-                    for i, table in enumerate(tables):
-                        try:
-                            # Convert table data to DataFrame
-                            df = pd.DataFrame(table[1:], columns=table[0])
-                            df.to_excel(writer, sheet_name=f"Table_{i + 1}", index=False)
-                        except Exception as e:
-                            log_message = f"Error saving table {i + 1}: {str(e)[:200]}"
-                            print(log_message)
-                            write_log(log_file, log_message)
-                            continue
-
-                log_message = f"Successfully converted {filename} to {xlsx_filename}"
-                print(log_message)
-                write_log(log_file, log_message)
-
-            except Exception as e:
-                log_message = f"Failed to process {filename}: {type(e).__name__} - {str(e)[:200]}"
-                print(log_message)
-                write_log(log_file, log_message)
-                continue
-
-
-def html_to_pdf(html_file_path, pdf_file_path=None):
-    """
-    Convert an HTML file to PDF using Chrome browser.
-
-    Args:
-        html_file_path (str): Path to the input HTML file
-        pdf_file_path (str): Path for the output PDF file (optional)
-
-    Returns:
-        bool: True if conversion was successful, False otherwise
-    """
-    # If no output path is provided, use the same name with .pdf extension
-    if pdf_file_path is None:
-        pdf_file_path = os.path.splitext(html_file_path)[0] + '.pdf'
-
-    # Set up Chrome options
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')  # Run in background
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--window-size=1920,1080')  # Set window size for consistent rendering
-
-    try:
-        # Initialize the driver
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-
-        try:
-            # Convert file path to URL (handle Windows paths)
-            absolute_path = os.path.abspath(html_file_path)
-            # Replace backslashes with forward slashes for Windows
-            absolute_path = absolute_path.replace('\\', '/')
-            file_url = f"file:///{absolute_path}"
-
-            # Navigate to the HTML file
-            driver.get(file_url)
-
-            # Wait for page to load (more reliable than implicit wait for PDF generation)
-            time.sleep(2)  # Adjust this based on your content complexity
-
-            # Print to PDF with better options
-            print_options = {
-                'landscape': False,
-                'displayHeaderFooter': False,
-                'printBackground': True,
-                'preferCSSPageSize': True,
-                'marginTop': 0.5,
-                'marginBottom': 0.5,
-                'marginLeft': 0.5,
-                'marginRight': 0.5,
-                'pageRanges': '',  # Print all pages
-            }
-
-            # Execute the print command
-            result = driver.execute_cdp_cmd('Page.printToPDF', print_options)
-
-            # Ensure the output directory exists
-            os.makedirs(os.path.dirname(pdf_file_path), exist_ok=True)
-
-            # Save the PDF
-            with open(pdf_file_path, 'wb') as f:
-                f.write(base64.b64decode(result['data']))
-
-            print(f"✓ Successfully converted: {html_file_path} -> {pdf_file_path}")
-            return True
-
-        except Exception as e:
-            print(f"✗ Error processing {html_file_path}: {str(e)}")
-            return False
-
-        finally:
-            driver.quit()
-
-    except Exception as e:
-        print(f"✗ Failed to initialize browser for {html_file_path}: {str(e)}")
-        return False
-
-
-def convert_all_html_files(root_directory='.', output_directory=None, pattern=('.html', '.htm')):
-    """
-    Recursively find and convert all HTML files in a directory tree.
-
-    Args:
-        root_directory (str): Root directory to search for HTML files
-        output_directory (str): Custom output directory (optional)
-        pattern (tuple): File extensions to search for
-    """
-    success_count = 0
-    total_count = 0
-
-    print(f"Searching for HTML files in: {os.path.abspath(root_directory)}")
-
-    for root, dirs, files in os.walk(root_directory):
-        for file in files:
-            if file.lower().endswith(pattern):
-                total_count += 1
-                html_file_path = os.path.join(root, file)
-
-                # Determine output PDF path
-                if output_directory:
-                    # Maintain directory structure in output directory
-                    relative_path = os.path.relpath(root, root_directory)
-                    pdf_dir = os.path.join(output_directory, relative_path)
-                    pdf_file_path = os.path.join(pdf_dir, os.path.splitext(file)[0] + '.pdf')
-                else:
-                    # Save in same directory as HTML file
-                    pdf_file_path = None
-
-                # Convert the file
-                if html_to_pdf(html_file_path, pdf_file_path):
-                    success_count += 1
-
-    print(f"\n📊 Conversion Summary:")
-    print(f"   Total HTML files found: {total_count}")
-    print(f"   Successfully converted: {success_count}")
-    print(f"   Failed: {total_count - success_count}")
-
-    return success_count, total_count
-
-
-def split_parecer():
-    try:
-        df = pd.read_excel(r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                           r'Social\Teste001\Sofia\Pareceres_SEi\processos_DB.xlsx', dtype=str)
-        for i, r in df.iterrows():
-            partial_txt = r.iloc[1]
-            txt = partial_txt.split('º')[-1].strip()
-            txt = txt.replace(')', '')
-            df.at[i,1] = txt
-        df.to_excel(r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                           r'Social\Teste001\Sofia\Pareceres_SEi\processos_DB.xlsx',
-                    index=False,)
-    except Exception as e:
-        print(f"✗ Failed to initialize browser for {type(e).__name__}: {str(e)[:100]}")
-        return False
-
-
-
-def search_google():
-    def conectar_navegador_existente():
-        """
-        Inicializa o Objeto Robo, configurando e iniciando o driver do Chrome.
-        """
-        try:
-            # Configuração do registro
-            #  .arquivo_registro = ''
-            # Inicia as opções do Chrome
-            chrome_options = webdriver.ChromeOptions()
-            # Endereço de depuração para conexão com o Chrome
-            chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
-            # Inicializa o driver do Chrome com as opções e o gerenciador de drivers
-            driver = webdriver.Chrome(
-                service=Service(ChromeDriverManager().install()),
-                options=chrome_options)
-
-            print("✅ Conectado ao navegador existente com sucesso.")
-
-
-            return driver
-        except Exception as err:
-            # Imprime mensagem de erro se a conexão falhar
-            print(f"❌ Erro ao conectar ao navegador existente: {err}")
-
-    # Calculate match score (simplified example)
-    def calculate_match_score(our_desc, found_title):
-        our_desc = str(our_desc).lower()
-        found_title = str(found_title).lower()
-        our_keywords = set(our_desc.split())
-        found_keywords = set(found_title.split())
-        intersection = our_keywords.intersection(found_keywords)
-        union = our_keywords.union(found_keywords)
-        match_score = len(intersection) / len(union) if union else 0
-        return round(match_score, 2)
-
-    drive = conectar_navegador_existente()
-
-    df = pd.read_excel(r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                       r'Social\SNEAELIS - Robô PAD\027517_2025 Matheus Sena\Planilha de Custos - Proposta '
-                       r'N°27517_2025 (7).xlsx', dtype=str, header=7)
-    results_list = []
-
-    for index, row in df.iterrows():
-        if row['TIPO'] in ['Recursos Humanos', 'Serviços', 'Eventos']:
-            continue
-
-        product_name = row['ITEM']
-        our_description = row['ESPECIFICAÇÃO DO ITEM']
-
-        # Create the Google Shopping search URL
-        search_query = product_name.replace(' ', '+')
-        search_url = f"https://www.google.com/search?q={search_query}&tbm=shop"
-
-        try:
-            # Navigate to the search URL using the controlled browser
-            drive.get(search_url)
-
-            # Wait for the shopping results to load. We'll wait for a common element.
-            # This is a more stable selector than specific class names.
-            WebDriverWait(drive, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "[data-dtld]"))
-                # Waits for any shopping result card
-            )
-
-            # Let the page settle
-            time.sleep(2)
-
-            # Now, find the first result. Google's classes change often, so this might need adjustment.
-            # Common selectors for the first item's container:
-            # Try these if one fails:
-            result_selectors = [
-                'search', # ID selector
-                'div.sh-dgr__grid-result',  # Older selector
-                'div.sh-dgr__content',  # Another common one
-                'div[data-dtld]',# Generic data attribute
-            ]
-
-            first_result = None
-            for selector in result_selectors:
-                if selector == 'search':
-                    first_result = drive.find_element(By.ID, selector)
-                    break
-                else:
-                    results = drive.find_elements(By.CSS_SELECTOR, selector)
-                    if results:
-                        first_result = results[0]
-                        break
-
-            if first_result:
-                # Extract text from within the first result
-                # Again, use multiple potential selectors for robustness
-                try:
-                    title_elem = first_result.find_element(
-                        By.CSS_SELECTOR, 'h3, [role="heading"], .tAxDx'
-                    )
-                    found_title = title_elem.text
-                except:
-                    found_title = "Title not found"
-
-                try:
-                    # Look for price element
-                    price_elem = first_result.find_element(By.CSS_SELECTOR,
-                                                           'span.a8Pemb, .T14wmb, [aria-label*="$"]')
-                    found_price = price_elem.text
-                except:
-                    found_price = "Price not found"
-
-                try:
-                    # Look for store/source element
-                    source_elem = first_result.find_element(By.CSS_SELECTOR, 'div.aULzUe, .IuHnof')
-                    found_source = source_elem.text
-                except:
-                    found_source = "Source not found"
-
-
-                results_list.append({
-                    'our_product_name': product_name,
-                    'found_title': found_title,
-                    'found_price': found_price,
-                    'found_source': found_source,
-                })
-                print(f"Success: {product_name} -> {found_price}")
-
-            else:
-                print(f"No results found for: {product_name}")
-                results_list.append({
-                    'our_product_name': product_name,
-                    'found_title': "No results found",
-                    'found_price': None,
-                    'found_source': None,
-                    'match_score': None
-                })
-
-        except Exception as e:
-            print(f"Failed for {product_name}: {e}")
-            results_list.append({
-                'our_product_name': product_name,
-                'found_title': f"Error: {e}",
-                'found_price': None,
-                'found_source': None,
-                'match_score': None
-            })
-
-            # Add a delay to be polite and avoid looking like a bot
-        time.sleep(3)
-
-        # Save results
-        results_df = pd.DataFrame(results_list)
-        results_df.to_excel('google_shopping_selenium_results.xlsx', index=False)
-        print("Scraping complete. Results saved.")
-
-
-
-
+import pandas as pd
+from openpyxl import load_workbook
+from copy import copy
+import datetime
 
 
 
 if __name__ == "__main__":
     func = int(input("Choose a function: "))
 
-
-    if func == 1:
-        concatenate_excel_files()
-
-
     # split the nucleai on the dir into subdirs
-    elif func == 2:
-        separate_nuclei()
+    if func == 2:
+        def separate_nuclei():
+            def aid_func(filename):
+                pattern = r'Chamadas\s(.*?)(?:\.pdf|_compressed\.pdf|\.xlsx\.pdf|_compressed_compressed\.pdf)'
+                match = re.search(pattern, filename, re.IGNORECASE)
+                if match:
+                    nucleus_name = match.group(1).strip()
+                    return nucleus_name.replace('_.', '')
+                return None
+
+            dir_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                        r'Social\SNEAELIS - Termo Fomento Inst. Léo Moura\Frequencia 926508')
+
+            for root, dirs, files in os.walk(dir_path):
+                if 'Frequencias 910782' in dirs:
+                    dirs.remove('Frequencias 910782')
+                for filename in files:
+                    if not filename.lower().endswith('.pdf'):
+                        continue
+                    nucleus = aid_func(filename)
+
+                    if nucleus:
+                        new_dir_path = os.path.join(root, nucleus)
+                        if not os.path.exists(new_dir_path):
+                            print(f"Creating directory: {new_dir_path}")
+                            os.makedirs(new_dir_path)
+                        source_file = os.path.join(root, filename)
+                        destination_file = os.path.join(new_dir_path, filename)
+
+                        print(f"Moving file: {filename} to {new_dir_path}")
+                        shutil.move(source_file, destination_file)
 
 
     # .pdf to .xlsx
     elif func == 3:
-        pdf_to_xlsx()
+        def pdf_to_xlsx():
+            def write_log(log_file, message):
+                """Write messages to log file"""
+                with open(log_file, 'a', encoding='utf-8') as f:
+                    f.write(message + '\n')
+
+            def extract_tables_with_pdfplumber(pdf_source):
+                """Extract tables using pdfplumber with focus on area below 'Nº'"""
+                tables = []
+
+                with pdfplumber.open(pdf_source) as pdf:
+                    for page in pdf.pages:
+                        # Find the 'Nº' marker position
+                        y_start = None
+                        for word in page.extract_words():
+                            if word['text'].strip().upper() == 'Nº':
+                                y_start = word['top']
+                                break
+
+                        if y_start is None:
+                            continue  # Skip if no Nº found
+
+                        # Define crop area (everything below Nº)
+                        crop_area = (0, y_start - 5, page.width, page.height)  # x0, top, x1, bottom
+
+                        # Extract table from this region
+                        cropped_page = page.crop(crop_area)
+                        table = cropped_page.extract_table()
+
+                        if table and len(table) > 1:  # Ensure we have at least header + one row
+                            tables.append(table)
+
+                return tables
+
+            dir_path = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
+                        r"Social\SNEAELIS - Termo Fomento Inst. Léo Moura")
+
+            # Create log file
+            log_file = os.path.join(dir_path,
+                                    f"conversion_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+
+            for root, dirs, files in os.walk(dir_path):
+                if 'Frequencias 910782' in dirs:
+                    dirs.remove('Frequencias 910782')
+                for filename in files:
+                    if not filename.lower().endswith('.pdf'):
+                        continue
+
+                    pdf_path = os.path.join(root, filename)
+                    xlsx_filename = filename.replace('.pdf', '.xlsx')
+                    xlsx_path = os.path.join(root, xlsx_filename)
+
+                    log_message = f"\nProcessing {filename}..."
+                    print(log_message)
+                    write_log(log_file, log_message)
+
+                    try:
+                        # Try with original PDF first
+                        try:
+                            tables = extract_tables_with_pdfplumber(pdf_path)
+                            if tables:
+                                log_message = "Extracted tables with pdfplumber"
+                                print(log_message)
+                                write_log(log_file, log_message)
+                            else:
+                                raise ValueError("No tables found in initial extraction")
+                        except Exception as e:
+                            log_message = f"Initial extraction failed, trying cleaned version: {str(e)[:200]}"
+                            print(log_message)
+                            write_log(log_file, log_message)
+
+                            # Clean PDF in memory
+                            pdf_reader = PdfReader(pdf_path)
+                            pdf_writer = PdfWriter()
+
+                            for page in pdf_reader.pages:
+                                if "/Annots" in page:
+                                    del page["/Annots"]
+                                pdf_writer.add_page(page)
+
+                            # Create in-memory PDF bytes
+                            pdf_bytes = io.BytesIO()
+                            pdf_writer.write(pdf_bytes)
+                            pdf_bytes.seek(0)
+
+                            # Try extraction again with cleaned PDF
+                            tables = extract_tables_with_pdfplumber(pdf_bytes)
+                            if not tables:
+                                raise ValueError("All extraction methods failed")
+
+                        # Save to Excel
+                        with pd.ExcelWriter(xlsx_path) as writer:
+                            for i, table in enumerate(tables):
+                                try:
+                                    # Convert table data to DataFrame
+                                    df = pd.DataFrame(table[1:], columns=table[0])
+                                    df.to_excel(writer, sheet_name=f"Table_{i + 1}", index=False)
+                                except Exception as e:
+                                    log_message = f"Error saving table {i + 1}: {str(e)[:200]}"
+                                    print(log_message)
+                                    write_log(log_file, log_message)
+                                    continue
+
+                        log_message = f"Successfully converted {filename} to {xlsx_filename}"
+                        print(log_message)
+                        write_log(log_file, log_message)
+
+                    except Exception as e:
+                        log_message = f"Failed to process {filename}: {type(e).__name__} - {str(e)[:200]}"
+                        print(log_message)
+                        write_log(log_file, log_message)
+                        continue
 
 
     # Convert to .pdf from .html
     elif func == 4:
+        def html_to_pdf(html_file_path, pdf_file_path=None):
+            """
+            Convert an HTML file to PDF using Chrome browser.
+
+            Args:
+                html_file_path (str): Path to the input HTML file
+                pdf_file_path (str): Path for the output PDF file (optional)
+
+            Returns:
+                bool: True if conversion was successful, False otherwise
+            """
+            # If no output path is provided, use the same name with .pdf extension
+            if pdf_file_path is None:
+                pdf_file_path = os.path.splitext(html_file_path)[0] + '.pdf'
+
+            # Set up Chrome options
+            chrome_options = Options()
+            chrome_options.add_argument('--headless')  # Run in background
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--window-size=1920,1080')  # Set window size for consistent rendering
+
+            try:
+                # Initialize the driver
+                service = Service(ChromeDriverManager().install())
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+
+                try:
+                    # Convert file path to URL (handle Windows paths)
+                    absolute_path = os.path.abspath(html_file_path)
+                    # Replace backslashes with forward slashes for Windows
+                    absolute_path = absolute_path.replace('\\', '/')
+                    file_url = f"file:///{absolute_path}"
+
+                    # Navigate to the HTML file
+                    driver.get(file_url)
+
+                    # Wait for page to load (more reliable than implicit wait for PDF generation)
+                    time.sleep(2)  # Adjust this based on your content complexity
+
+                    # Print to PDF with better options
+                    print_options = {
+                        'landscape': False,
+                        'displayHeaderFooter': False,
+                        'printBackground': True,
+                        'preferCSSPageSize': True,
+                        'marginTop': 0.5,
+                        'marginBottom': 0.5,
+                        'marginLeft': 0.5,
+                        'marginRight': 0.5,
+                        'pageRanges': '',  # Print all pages
+                    }
+
+                    # Execute the print command
+                    result = driver.execute_cdp_cmd('Page.printToPDF', print_options)
+
+                    # Ensure the output directory exists
+                    os.makedirs(os.path.dirname(pdf_file_path), exist_ok=True)
+
+                    # Save the PDF
+                    with open(pdf_file_path, 'wb') as f:
+                        f.write(base64.b64decode(result['data']))
+
+                    print(f"✓ Successfully converted: {html_file_path} -> {pdf_file_path}")
+                    return True
+
+                except Exception as e:
+                    print(f"✗ Error processing {html_file_path}: {str(e)}")
+                    return False
+
+                finally:
+                    driver.quit()
+
+            except Exception as e:
+                print(f"✗ Failed to initialize browser for {html_file_path}: {str(e)}")
+                return False
+
+
+        def convert_all_html_files(root_directory='.', output_directory=None, pattern=('.html', '.htm')):
+            """
+            Recursively find and convert all HTML files in a directory tree.
+
+            Args:
+                root_directory (str): Root directory to search for HTML files
+                output_directory (str): Custom output directory (optional)
+                pattern (tuple): File extensions to search for
+            """
+            success_count = 0
+            total_count = 0
+
+            print(f"Searching for HTML files in: {os.path.abspath(root_directory)}")
+
+            for root, dirs, files in os.walk(root_directory):
+                for file in files:
+                    if file.lower().endswith(pattern):
+                        total_count += 1
+                        html_file_path = os.path.join(root, file)
+
+                        # Determine output PDF path
+                        if output_directory:
+                            # Maintain directory structure in output directory
+                            relative_path = os.path.relpath(root, root_directory)
+                            pdf_dir = os.path.join(output_directory, relative_path)
+                            pdf_file_path = os.path.join(pdf_dir, os.path.splitext(file)[0] + '.pdf')
+                        else:
+                            # Save in same directory as HTML file
+                            pdf_file_path = None
+
+                        # Convert the file
+                        if html_to_pdf(html_file_path, pdf_file_path):
+                            success_count += 1
+
+            print(f"\n📊 Conversion Summary:")
+            print(f"   Total HTML files found: {total_count}")
+            print(f"   Successfully converted: {success_count}")
+            print(f"   Failed: {total_count - success_count}")
+
+            return success_count, total_count
+
+
         root_dir = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
                     r'Social\Teste001\Sofia\Pareceres_SEi')
         convert_all_html_files(root_directory=root_dir)
 
-
+    # Split parecer
     elif func == 5:
-        split_parecer()
-
-
-    elif func == 6:
-        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
-        from playwright.sync_api import sync_playwright
-
-
-        class PWRobo:
-            def __init__(self, cdp_url: str = "http://localhost:9222"):
-                self.playwright = sync_playwright().start()
-                # Connect to existing browser via Chrome DevTools Protocol (CDP)
-                self.browser = self.playwright.chromium.connect_over_cdp(cdp_url)
-                # Get all browser contexts (browser windows/profiles)
-                self.context = self.browser.contexts[
-                    0] if self.browser.contexts else self.browser.new_context()
-                # Get all open pages (tabs)
-                self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
-                self.block_rss()
-
-                # Defines Logger
-                self.logger = self.setup_logger()
-
-                print(
-                f"✅ Connected to existing Chrome instance via Playwright. Connected to page: {self.page.url}")
-
-            @staticmethod
-            def setup_logger(level=logging.INFO):
-                log_file_path = (
+        def split_parecer():
+            try:
+                df = pd.read_excel(
                     r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                    r'Social\Teste001\fabi_DFP')
-
-                # Create logs directory if it doesn't exist
-                log_file_name = f'log_emails_{datetime.now().strftime('%d_%m_%Y')}.log'
-
-                # Sends to specific directory
-                log_file = os.path.join(log_file_path, log_file_name)
-
-                if not os.path.exists(log_file_path):
-                    os.makedirs(log_file_path)
-                    print(f"✅ Directory created/verified: {log_file_path}")
-
-                logger = logging.getLogger()
-                if logger.handlers:
-                    return logger
-
-                # Avoid adding handlers multiple times
-                logger.setLevel(level)
-
-                formatter = logging.Formatter(
-                    '%(asctime)s | | %(message)s\n' + '─' * 100,
-                    datefmt='%Y-%m-%d  %H:%M'
-                )
-
-                # File handler with rotation
-                file_handler = logging.handlers.RotatingFileHandler(
-                    log_file,
-                    maxBytes=10485760,
-                    backupCount=5,
-                    encoding='utf-8'
-                )
-                file_handler.setFormatter(formatter)
-
-                console_handler = logging.StreamHandler()
-                console_handler.setFormatter(formatter)
-
-                logger.addHandler(file_handler)
-                logger.addHandler(console_handler)
-
-                if os.path.exists(log_file):
-                    print(f"🎉 SUCCESS! Log file created at: {log_file}")
-                    print(f"📊 File size: {os.path.getsize(log_file)} bytes")
-                    return logger
-                else:
-                    print(f"❌ File not created at: {log_file}")
-
-            @staticmethod
-            def mark_proposal_done(df: pd.DataFrame, email: str, file_path: str,
-                                   sheet_name: str) -> bool:
-                empty_cell = df["Preenchidos"].isna().idxmax()
-
-                df.loc[empty_cell, "Preenchidos"] = email
-
-                df.to_excel(file_path, sheet_name=sheet_name, index=False)
-
-                return True
-
-            def block_rss(self):
-                def route_handler(route, request):
-                    if request.resource_type in ["image", "stylesheet", "font"]:
-                        route.abort()
-                    else:
-                        route.continue_()
-
-                self.page.route('**/*', route_handler)
-
-            def init_search(self):
-                try:
-                    # In the landing page access proposal sub menu
-                    self.page.click("xpath=//*[@id='menuPrincipal']/div[1]/div[3]", timeout=5000)
-                    # Search for proposal
-                    self.page.click(
-                        "xpath=//div[@id='contentMenu']//a[normalize-space()='Consultar Propostas']",
-                        timeout=5000)
-
-                except PlaywrightTimeoutError as te:
-                    print(f"❗⏱️ Timeout occurred during initial search: {str(te)[:100]}\nErro name"
-                          f":{type(te).__name__}")
-                except PlaywrightError as pe:
-                    print(f"❗🧩 Playwright-specific error: {str(pe)[:100]}\nErro name:{type(pe).__name__}")
-                except Exception as e:
-                    print(
-                        f"🚨🚨 An unexpected error occurred while initiating search: {str(e)[:100]}\nErro name"
-                        f":{type(e).__name__}")
-
-
-            def loop_search(self, prop_num: str, idx: int):
-                try:
-                    self.logger.info(f"Pesquisando índice:{idx} ")
-                    # Select desired proposal
-                    self.page.fill("#consultarNumeroProposta", f"{prop_num}")  # number input
-                    self.page.click("xpath=(//input[@id='form_submit'])[1]", timeout=5000)  # click to consult
-                    self.page.click("div[class='numeroProposta'] a", timeout=5000)  # click to select
-                except PlaywrightTimeoutError as te:
-                    print(
-                        f"❗⏱️ Timeout occurred during search loop: {str(te)[:100]}\nErro name:{type(te).__name__}")
-                except PlaywrightError as pe:
-                    print(f"❗🧩 Playwright-specific error: {str(pe)[:100]}\nErro name:{type(pe).__name__}")
-                except Exception as e:
-                    print(f"🚨🚨 An unexpected error occurred under loop search: {str(e)[:100]}\nErro name"
-                          f":{type(e).__name__}")
-
-
-            def reset(self):
-                try:
-                    self.page.click("xpath=//*[@id='breadcrumbs']/a[2]", timeout=5000)
-
-                except PlaywrightTimeoutError as te:
-                    print(
-                        f"❗⏱️ Timeout occurred during reset: {str(te)[:100]}\nErro name:{type(te).__name__}")
-                except PlaywrightError as pe:
-                    print(f"❗🧩 Playwright-specific error: {str(pe)[:100]}\nErro name:{type(pe).__name__}")
-                except Exception as e:
-                    print(f"🚨🚨 An unexpected error occurred while reseting: {str(e)[:100]}\nErro name"
-                          f":{type(e).__name__}")
-
-            def land_page(self):
-                try:
-                    print("Trying to reset")
-                    icon = self.page.wait_for_selector("xpath=//*[@id='logo']/a/img", timeout=1000)
-                    if icon.is_enabled():
-                        icon.click()
-                        time.sleep(1.5)
-
-                except PlaywrightTimeoutError as te:
-                    print(f"❗⏱️ Timeout occurred at land page link location: {str(te)[:100]}\nErro name"
-                          f":{type(te).__name__}")
-                    return False
-                except PlaywrightError as pe:
-                    print(f"❗🧩 Playwright-specific error: {str(pe)[:100]}\nErro name:{type(pe).__name__}")
-                    return False
-                except Exception as e:
-                    print(f"🚨🚨 An unexpected error occurred at land_page: {str(e)[:100]}\nErro name"
-                          f":{type(e).__name__}")
-                    return False
-
-
-            def get_email(self) -> str:
-                #//a[@id='lnkConsultaAnterior']
-                self.page.click("xpath=//tr[@id='tr-alterarProponente']//input[@id='form_submit']",
-                                timeout=7000)
-                email_loc = self.page.wait_for_selector("xpath=//span[@id='txtEmail']",
-                                timeout=7000)
-                email = email_loc.text_content()
-                self.page.click("xpath=//a[@id='lnkConsultaAnterior']",
-                                timeout=7000)
-                return email
-
-        # convenio
-        def main():
-            xlsx_source_path = (
-                r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                r'Social\Teste001\fabi_DFP\Relação Proponentes Live.xlsx')
-            # Get excel file
-            excel_file = pd.ExcelFile(xlsx_source_path)
-            # Get all sheets inside the file and store in a list
-            sheet_names = excel_file.sheet_names
-
-            # Initiate automation instance
-            robo = PWRobo()
-
-            robo.land_page()
-            robo.init_search()
-
-            for i, sheet in enumerate(sheet_names):
-                # Termo de Fomento
-                # Convênio
-                if sheet == 'Planilha' or sheet == 'Termo de Fomento':
-                    continue
-                print(f"\n{'<' * 3}📄 Loading sheet [{i}/{len(sheet_names)}]: '{sheet}'{'>' * 3}"
-                      .center(80, '-'))
-                try:
-                    # Create the DataFrame with source data
-                    df = pd.read_excel(xlsx_source_path, dtype=str, sheet_name=sheet)
-                    print(f"\n✅ Sheet '{sheet}' loaded successfully with {len(df)} rows.\n")
-
-                    proposal_done = set(df["E-Mail"])
-
-                    for idx, row in df.iterrows():
-                        try:
-                            prop_num = row['Nº Proposta']
-                            if pd.isna(prop_num):
-                                continue
-                            elif prop_num in proposal_done:
-                                print(f"Proposal: {prop_num} already filled")
-                                continue
-                            print("\n", f"{'⚡' * 3}🚀 EXECUTING PROPOSAL: {prop_num}, index: {idx} "
-                                        f"🚀{'⚡' * 3}".center(70,
-                                                             '='), '\n')
-
-                            robo.loop_search(prop_num, idx)
-                            email = robo.get_email()
-
-                            if robo.mark_proposal_done(df=df, proposal_num=email,
-                                                       file_path=xlsx_source_path,
-                                                       sheet_name=sheet):
-                                print(f"\n✅ Proposal {prop_num} marked as Done.\n")
-                        except Exception as e:
-                            print(f"🚨🚨 An unexpected error occurred during main: {str(e)[:100]}\nErro name"
-                                  f":{type(e).__name__}")
-                except Exception as e:
-                    print(
-                        f"🚨🚨 Failed to load or process sheet '{sheet}': {str(e)[:100]} (Error: {type(e).__name__})")
-
-
-        if __name__ == "__main__":
-            main()
+                    r'Social\Teste001\Sofia\Pareceres_SEi\processos_DB.xlsx', dtype=str)
+                for i, r in df.iterrows():
+                    partial_txt = r.iloc[1]
+                    txt = partial_txt.split('º')[-1].strip()
+                    txt = txt.replace(')', '')
+                    df.at[i, 1] = txt
+                df.to_excel(r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                            r'Social\Teste001\Sofia\Pareceres_SEi\processos_DB.xlsx',
+                            index=False, )
+            except Exception as e:
+                print(f"✗ Failed to initialize browser for {type(e).__name__}: {str(e)[:100]}")
+                return False
 
 
     # confere os pads com time.sleep
@@ -3306,7 +2832,7 @@ if __name__ == "__main__":
 
 
     # Compress pdf
-    if func == 14:
+    elif func == 14:
         def compress_pdf_fitz(dir_path, dpi=150, quality=80):
             """
             Compress PDF using PyMuPDF - no poppler required
@@ -3376,7 +2902,7 @@ if __name__ == "__main__":
                             quality=80)
 
 
-    if func == 15:
+    elif func == 15:
         import dash
         from dash import dcc, html, Input, Output
         import plotly.express as px
@@ -3478,13 +3004,150 @@ if __name__ == "__main__":
         app.run(debug=True, port=8050)
 
 
-    elif func == 16:
-        xlsx_source_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                            r'Social\Teste001\fabi_DFP\Propostas Para Diligências Padrão.xlsm')
+    elif func == 17:
+        def drop_empty_rows_and_save(file_path):
+            """
+            Reads an Excel file, drops completely empty rows, and saves back to the same file.
 
-        xlsx_source_path2 = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                            r'Social\Teste001\fabi_DFP\Propostas Para Diligências Padrão_rec.xlsx')
+            Args:
+                file_path (str): Path to the Excel file (.xlsx or .xls)
+            """
+            # Read the Excel file
+            df = pd.read_excel(file_path)
 
-        df = pd.read_excel(xlsx_source_path, dtype=str, sheet_name='Convênio')
+            # Drop rows where ALL columns are empty
+            df_cleaned = df.dropna(how='all')
 
-        df.to_excel(xlsx_source_path2, sheet_name='Convênio', index=False)
+            # Save back to the same file
+            df_cleaned.to_excel(file_path, index=False)
+
+            print(f"Removed {len(df) - len(df_cleaned)} empty rows. File saved to {file_path}")
+
+        drop_empty_rows_and_save(str(input("Type in the complete path for desired file: ")))
+
+    # Text cleaner for monitor.py
+    elif func == 18:
+        def text_cleaner(text: str):
+            text = re.sub(r'\([^)]*\)', '', text)# Remove (content)
+            text = text.replace('.', '')
+
+            text = re.sub(r'\s+', ' ', text).strip()
+            text = text.upper()
+            return text
+
+
+        def create_matrix(file_path_org, file_path_dst, unique_values, process_col='Processo'):
+            df_original = pd.read_excel(file_path_org, dtype=str).fillna('').astype(str)
+
+            df_result = pd.DataFrame({process_col: df_original[process_col].unique()})
+
+            for value in unique_values:
+                df_result[value] = ''
+
+            for idx, row in df_original.iterrows():
+                process_num = row[process_col]
+
+                if pd.isna(row[process_col]) or process_num == '':
+                    continue
+
+                clear_row = []
+                for value in row.values:
+                    clear_row.append(text_cleaner(str(value)))
+
+
+                for value in unique_values:
+                    if str(value).upper() in clear_row:
+                        df_result.loc[df_result[process_col] == process_num, value] = 'X'
+
+            print(len(df_result))
+            df_result.to_excel(file_path_dst, index=False)
+
+
+        file_path_org = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                         r'Social\Teste001\Monitoramento processos SEi\monitoramento_sei.xlsx')
+        file_path_dst = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                         r'Social\Teste001\Monitoramento processos SEi\data_set - Copia.xlsx')
+
+        unique_values = ['DAPC', 'DFP', 'GAB-AssTécnica', 'CGC', 'CGFP', 'Processo não possui andamentos '
+                                                                         'abertos', 'DIE', 'DEAELIS',
+                         'CGAP-TEF', 'CGEALIS', 'CGIIE', 'CGAP-CVTD', 'CGAP', 'GAB-COAAD', 'CGPIE',
+                         'GAB-CMOF']
+
+        create_matrix(file_path_org, file_path_dst, unique_values, process_col='Processo')
+
+    elif func == 19:
+        def copy_style(source_cell, target_cell):
+            if source_cell.has_style:
+                target_cell.font = copy(source_cell.font)
+                target_cell.border = copy(source_cell.border)
+                target_cell.fill = copy(source_cell.fill)
+                target_cell.number_format = copy(source_cell.number_format)
+                target_cell.protection = copy(source_cell.protection)
+                target_cell.alignment = copy(source_cell.alignment)
+
+
+        origin_file_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                      r'Social\Teste001\Monitoramento processos SEi\Controle SNEAELIS - 2025 - Copia.xlsx')
+
+        data_set_file_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
+                              r'Assistência '
+                     r'Social\Teste001\Monitoramento processos SEi\data_set - Copia.xlsx')
+
+        destiny_file_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                     r'Social\Teste001\Monitoramento processos SEi\propostas_fluxos_20251113_120435 (1) - '
+                             r'Copia.xlsx')
+
+        origin_df = pd.read_excel(origin_file_path)
+        data_set_df  = pd.read_excel(data_set_file_path)
+
+        columns_to_append = [col for col in data_set_df.columns if col != 'Processo']
+
+        process_to_protocol = origin_df[['Processo', 'Nº Proposta']].drop_duplicates()
+
+        data_set_protocol_map = pd.merge(
+            data_set_df,
+            process_to_protocol,
+            on='Processo',
+            how='left'
+        )
+        print(f"data_set_with_protocol shape: {data_set_protocol_map.shape}\n")
+
+        wb = load_workbook(destiny_file_path)
+        ws = wb.active
+
+        last_col = ws.max_column
+
+        new_cols = [col for col in data_set_protocol_map.columns if col != 'Nº Proposta']
+
+        header_row = 1
+        header_cells = [cell.value for cell in ws[header_row]]
+
+        try:
+            protocol_col_idx = header_cells.index('Número da Proposta') + 1
+            print(f"Protocol column found at index: {protocol_col_idx}")
+        except:
+            print("ERROR: 'Número da Proposta' column not found!")
+            protocol_col_idx = 1
+
+        for i, col_name in enumerate(new_cols, start=1):
+            new_col_idx = last_col + i
+
+            ws.cell(row=1, column=new_col_idx).value = col_name
+            copy_style(ws.cell(row=1, column=last_col), ws.cell(row=1, column=new_col_idx))
+
+            for row_idx in range(2, ws.max_row + 1):
+                protocol_num = ws.cell(row=row_idx, column=protocol_col_idx).value
+                matching_data = data_set_protocol_map[data_set_protocol_map['Nº Proposta'] == protocol_num]
+
+                if not matching_data.empty:
+                    value =matching_data.iloc[0][col_name]
+                    ws.cell(row=row_idx, column=new_col_idx).value = value
+
+        s = time.time()
+        wb.save(destiny_file_path)
+        d = time.time()
+        elapsed = datetime.timedelta(seconds=d - s)
+
+        # Remove microseconds for cleaner output
+        elapsed_str = str(elapsed).split('.')[0]
+        print(f"Save time: {elapsed_str}")

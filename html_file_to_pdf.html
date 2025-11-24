@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local HTML to PDF Converter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            background-color: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            margin: 20px 0;
+        }
+        
+        header {
+            background: #4a00e0;
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 2.2rem;
+            margin-bottom: 10px;
+        }
+        
+        .description {
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+            text-align: center;
+            max-width: 800px;
+            line-height: 1.6;
+            color: #666;
+        }
+        
+        .content {
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+        
+        @media (min-width: 768px) {
+            .content {
+                flex-direction: row;
+            }
+        }
+        
+        .input-section, .preview-section {
+            padding: 20px;
+        }
+        
+        .input-section {
+            flex: 1;
+        }
+        
+        .preview-section {
+            flex: 1;
+            border-left: 1px solid #eee;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 300px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 14px;
+            resize: vertical;
+            margin-bottom: 15px;
+        }
+        
+        .preview {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 300px;
+            background-color: #f9f9f9;
+            overflow: auto;
+        }
+        
+        .buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        #convertBtn {
+            background-color: #4a00e0;
+            color: white;
+            flex: 1;
+        }
+        
+        #convertBtn:hover {
+            background-color: #3a00b0;
+        }
+        
+        #resetBtn {
+            background-color: #f0f0f0;
+            color: #333;
+        }
+        
+        #resetBtn:hover {
+            background-color: #ddd;
+        }
+        
+        #sampleBtn {
+            background-color: #8e2de2;
+            color: white;
+        }
+        
+        #sampleBtn:hover {
+            background-color: #7a1dc8;
+        }
+        
+        .instructions {
+            background-color: #f8f9fa;
+            border-left: 4px solid #4a00e0;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 8px 8px 0;
+        }
+        
+        .instructions h3 {
+            margin-bottom: 10px;
+            color: #4a00e0;
+        }
+        
+        .instructions ol {
+            margin-left: 20px;
+            line-height: 1.8;
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 20px;
+            color: white;
+            font-size: 0.9rem;
+        }
+        
+        .message {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            text-align: center;
+            display: none;
+        }
+        
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .setup-instructions {
+            background-color: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 30px;
+            max-width: 1000px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+        }
+        
+        .setup-instructions h2 {
+            color: #4a00e0;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .setup-instructions .step {
+            margin-bottom: 25px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .setup-instructions .step:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+            padding-bottom: 0;
+        }
+        
+        .setup-instructions h3 {
+            color: #6a11cb;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+        
+        .setup-instructions .step-number {
+            background-color: #6a11cb;
+            color: white;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+        }
+        
+        .setup-instructions code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .setup-instructions pre {
+            background-color: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>HTML to PDF Converter</h1>
+        <p>Convert your HTML source code to PDF instantly</p>
+    </header>
+    
+    <div class="description">
+        Paste your HTML code in the input area, preview it, and convert it to a downloadable PDF document.
+    </div>
+    
+    <div class="container">
+        <div class="content">
+            <div class="input-section">
+                <h2>HTML Input</h2>
+                <textarea id="htmlInput" placeholder="Paste your HTML code here..."></textarea>
+                
+                <div class="buttons">
+                    <button id="sampleBtn">Load Sample HTML</button>
+                    <button id="resetBtn">Reset</button>
+                </div>
+            </div>
+            
+            <div class="preview-section">
+                <h2>Live Preview</h2>
+                <div id="preview" class="preview">
+                    <p>Your HTML preview will appear here...</p>
+                </div>
+                
+                <div class="buttons">
+                    <button id="convertBtn">Convert to PDF</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <h3>How to use this converter:</h3>
+            <ol>
+                <li>Paste your HTML source code in the input area</li>
+                <li>Review the live preview to ensure it looks correct</li>
+                <li>Click "Convert to PDF" to generate and download the PDF</li>
+                <li>Use "Load Sample HTML" to see an example</li>
+            </ol>
+        </div>
+    </div>
+    
+    <div id="message" class="message success">
+        PDF generated successfully! Download should start automatically.
+    </div>
+    
+    <div class="setup-instructions">
+        <h2>How to Set Up on Your Local Machine or LAN</h2>
+        
+        <div class="step">
+            <h3><span class="step-number">1</span> Save the HTML file</h3>
+            <p>Save this entire web page as an HTML file on your computer. Right-click anywhere on the page and select "Save As..." or use Ctrl+S (Cmd+S on Mac). Save it as <code>html-to-pdf.html</code>.</p>
+        </div>
+        
+        <div class="step">
+            <h3><span class="step-number">2</span> Run a local web server (optional but recommended)</h3>
+            <p>For best performance, especially if you need to access it from other devices on your LAN, run a simple web server:</p>
+            
+            <h4>Using Python:</h4>
+            <pre>python -m http.server 8000</pre>
+            
+            <h4>Using Node.js (if you have it installed):</h4>
+            <pre>npx http-server -p 8000</pre>
+            
+            <h4>Using PHP:</h4>
+            <pre>php -S 0.0.0.0:8000</pre>
+        </div>
+        
+        <div class="step">
+            <h3><span class="step-number">3</span> Access the application</h3>
+            <p>Open your web browser and navigate to:</p>
+            <pre>http://localhost:8000/html-to-pdf.html</pre>
+            
+            <p>To access from other devices on your local network, use your computer's IP address:</p>
+            <pre>http://[YOUR-IP-ADDRESS]:8000/html-to-pdf.html</pre>
+            <p>Replace <code>[YOUR-IP-ADDRESS]</code> with your computer's local IP address (e.g., 192.168.1.100).</p>
+        </div>
+        
+        <div class="step">
+            <h3><span class="step-number">4</span> Direct file access (simplest method)</h3>
+            <p>If you don't need to access it from other devices, you can simply open the HTML file directly in your browser by double-clicking it.</p>
+        </div>
+    </div>
+    
+    <footer>
+        <p>This tool uses html2pdf.js for client-side PDF generation | &copy; 2023 HTML to PDF Converter</p>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const htmlInput = document.getElementById('htmlInput');
+            const preview = document.getElementById('preview');
+            const convertBtn = document.getElementById('convertBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            const sampleBtn = document.getElementById('sampleBtn');
+            const message = document.getElementById('message');
+            
+            // Update preview as user types
+            htmlInput.addEventListener('input', updatePreview);
+            
+            // Load sample HTML
+            sampleBtn.addEventListener('click', function() {
+                const sampleHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sample Document</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 40px; }
+        h1 { color: #2c3e50; }
+        .content { background: #f9f9f9; padding: 20px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Welcome to HTML to PDF Converter</h1>
+    <p>This is a sample HTML document that demonstrates the conversion capabilities.</p>
+    <div class="content">
+        <h2>How it works:</h2>
+        <ol>
+            <li>Paste your HTML code</li>
+            <li>Preview the result</li>
+            <li>Convert to PDF with one click</li>
+        </ol>
+    </div>
+    <p>You can use this tool to convert any HTML content into a printable PDF document.</p>
+</body>
+</html>`;
+                htmlInput.value = sampleHTML;
+                updatePreview();
+            });
+            
+            // Reset input and preview
+            resetBtn.addEventListener('click', function() {
+                htmlInput.value = '';
+                preview.innerHTML = '<p>Your HTML preview will appear here...</p>';
+                message.style.display = 'none';
+            });
+            
+            // Convert to PDF
+            convertBtn.addEventListener('click', function() {
+                const element = preview.cloneNode(true);
+                
+                // Options for PDF generation
+                const opt = {
+                    margin: 10,
+                    filename: 'converted-document.pdf',
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2 },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                };
+                
+                // Generate and download PDF
+                html2pdf().set(opt).from(element).save();
+                
+                // Show success message
+                message.style.display = 'block';
+                setTimeout(() => {
+                    message.style.display = 'none';
+                }, 3000);
+            });
+            
+            // Update preview function
+            function updatePreview() {
+                const html = htmlInput.value;
+                if (html.trim() === '') {
+                    preview.innerHTML = '<p>Your HTML preview will appear here...</p>';
+                    return;
+                }
+                
+                try {
+                    preview.innerHTML = html;
+                } catch (e) {
+                    preview.innerHTML = `
+                        <p style="color: red;">Error rendering HTML: ${e.message}</p>
+                        <p>Please check your HTML syntax and try again.</p>
+                    `;
+                }
+            }
+        });
+    </script>
+</body>
+</html>

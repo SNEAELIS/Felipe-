@@ -4,6 +4,7 @@ import sys
 import win32com.client as win32
 from fuzzywuzzy import fuzz, process
 import pandas as pd
+from pandas import ExcelWriter
 
 
 # Send email to a list that is on excel, email is sent changing the sender and also has text and attachemnt
@@ -23,23 +24,70 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
         Returns: List
         """
         try:
-            df = pd.read_excel(excel_path, dtype=str)
+            df = pd.read_excel(excel_path, dtype=str, sheet_name='Planilha1')
+
             # Cria um lista para cada coluna do arquivo xlsx
             email_xlsx = list()
             entidade_xlsx = list()
 
+            try:
+                pd.read_excel(excel_path, dtype=str, sheet_name='Status')
+                print(f'Sheet found!')
+            except ValueError:
+                print(f'Sheet NOT found !')
+                print(f'Creating Sheet !')
+                # Create new status DataFrame if sheet doesn't exist
+                status_df = pd.DataFrame({
+                    'Index': df.index,
+                    'Status': [''] * len(df)
+                })
+                with pd.ExcelWriter(excel_path, engine='openpyxl', mode='a',
+                                    if_sheet_exists='replace') as writer:
+                    status_df.to_excel(writer, sheet_name='Status', index=False)
+
+
+            print(len(df))
+
             # Itera a planilha e armazena os dados em listas
             for indice, linha in df.iterrows():  # Assume que a primeira linha e um cabeçalho
-                email_xlsx.append(linha["Email parlamentar"])  # Busca destinatário do email
-                entidade_xlsx.append(linha["Parlamentar"])  # Busca o destinatário da mensagem
+                email_xlsx.append(linha["EMAIL AUTOR"])  # Busca destinatário do email
+                entidade_xlsx.append(linha["Autor"])  # Busca o destinatário da mensagem
 
             # Fix domain problems
             correct_email_xlsx = [correct_email_domain(e) for e in email_xlsx]
 
             return entidade_xlsx, correct_email_xlsx
+
         except Exception as e:
             print(f"❌ Failed to read Excel file: \n{e}")
             return []
+
+    def mark_as_done(index, file_path):
+        """Safely mark row as done and save to Excel"""
+        try:
+            status_df = pd.read_excel(excel_path, dtype=str, sheet_name='Status')
+
+            index = str(index)
+
+            status_df.loc[status_df['Index'] == index, 'Status'] = 'feito'
+
+            # Verify the modification
+            modified_value = status_df.loc[status_df['Index'] == index, 'Status'].values
+            if len(modified_value) > 0 and modified_value[0] == 'feito':
+                print("✅ DataFrame modification successful")
+            else:
+                print("❌ DataFrame modification failed!")
+
+            with ExcelWriter(file_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                # Save to Excel
+                status_df.to_excel(writer, index=False, sheet_name='Status')
+
+            return True
+
+        except Exception as err:
+            print(f"❌ Error in mark_as_done: {str(err)[:100]}\n")
+            return False
+
 
 
     def send_email_outlook():
@@ -61,8 +109,7 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
                     e_mail.Attachments.Add(attachment)
                 else:
                     print(f"⚠️ Attachment not found: {attachment}")
-            e_mail.Display()
-            sys.exit()
+            e_mail.Send()
             return print(f"📧📤 Email sent to: {email}")
         except Exception as e:
             print(f"❌ Failed to send email: \n{e}")
@@ -74,22 +121,26 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
         Customize this function to generate your email content
         based on the Excel data for each recipient
         """
-        set_subject = (f"Link - Webinar de Orientações para apresentação de propostas à SNEAELIS - "
-                       f"Emendas Parlamentares 2025")
+        set_subject = (f"Canal Oficial da SNEAELIS no WhatsApp - Link de Acesso")
 
         set_html_body = f"""
-        <p>Prezado(a)  {entidade},</p>
+<p>Prezados(as),</p>
 
-        <p>Você está recebendo esse e-mail porque se inscreveu pra o Webinar de orientações para apresentação
-         de propostas à SNEAELIS - Emendas Parlamentares 2025.</p>
+<p>A Secretaria Nacional de Esporte Amador, Educação, Lazer e Inclusão Social (SNEAELIS) está disponibilizando um canal oficial no WhatsApp, criado para o envio de avisos e comunicados importantes, de forma mais ágil e organizada.</p>
 
-        <p>O evento acontece hoje, às 13h30 e você pode acompanhar através do link abaixo.</p>
-        
-        <p><a href="https://youtube.com/live/o3354lllE4Y?feature=share">
-        Clique aqui para acessar o evento</a></p>        
-        
-        <p>Nos vemos em breve!</p>      
-        """
+<p>Para acessar o grupo, utilize o link abaixo:</p>
+
+<p><a href="https://chat.whatsapp.com/IVun6wpHIcD8TlKlQeamJu?mode=hqrt1">
+👉 Clique aqui para acessar o canal oficial no WhatsApp</a></p>
+
+<p>O canal é destinado exclusivamente à divulgação de informações oficiais. Em caso de dúvidas ou demandas, os atendimentos seguem pelos meios institucionais habituais.</p>
+
+<p>Agradecemos a atenção e contamos com a participação de todos.</p>
+
+<p>Atenciosamente,<br>
+Secretaria Nacional de Esporte Amador, Educação, Lazer e Inclusão Social – SNEAELIS<br>
+Ministério do Esporte</p>
+"""
         return set_subject, set_html_body
 
     entidade_data, email_data = read_excel_data()
@@ -98,26 +149,20 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
         print("No data found in Excel file")
         return
 
+    count = 0
     for index, email in enumerate(email_data):
+        if not email:
+            continue
         entidade = entidade_data[index]
         attachment = attachment_path
         subject, html_body = create_email_content()
 
         # Send email
         send_email_outlook()
+        #mark_as_done(index=index, file_path=excel_path)
+        count += 1
 
-
-def send_emails_from_excel_main():
-    xlsx = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-            r'Social\Teste001\emails_poli\Formulário de Inscrição-Webinário 2025.xlsx')
-    #attach = (r'')
-    sender = 'assessoria.sneaelis@esporte.gov.br'
-
-    send_emails_from_excel(
-        excel_path=xlsx,
-        attachment_path='',
-        sender=sender
-    )
+    print(count)
 
 
 def correct_email_domain(email, domain_threshold=80, correct_domains=None):
@@ -133,35 +178,69 @@ def correct_email_domain(email, domain_threshold=80, correct_domains=None):
         str: The corrected email address, or original if no good match found
     """
     # Default list of common correct domains
-    if correct_domains is None:
-        correct_domains = [
-            'gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com',
-            'aol.com', 'icloud.com', 'protonmail.com', 'mail.com',
-            'gmail', 'yahoo', 'outlook', 'hotmail'  # Also allow bare domains
-        ]
+    try:
+        if correct_domains is None:
+            correct_domains = [
+                'gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com',
+                'aol.com', 'icloud.com', 'protonmail.com', 'mail.com',
+                'gmail', 'yahoo', 'outlook', 'hotmail'  # Also allow bare domains
+            ]
 
-    # Extract the domain part
-    parts = email.split('@')
-    if len(parts) != 2:
-        return email  # Not a valid email format
+        # Handle NaN, None, and empty values
+        if pd.isna(email) or email is None or email == '':
+            return None
 
-    local_part, domain = parts
+        # Convert to string and strip whitespace
+        email = str(email).strip()
 
-    # Find the best match among correct domains
-    best_match, score = process.extractOne(domain, correct_domains, scorer=fuzz.ratio)
+        # Check for empty string after stripping
+        if not email:
+            return None
 
-    if score >= domain_threshold:
-        # Reconstruct email with corrected domain
-        corrected_email = f"{local_part}@{best_match}"
+        # Extract the domain part
+        parts = email.split('@')
+        if len(parts) != 2:
+            return None  # Not a valid email format
 
-        # Ensure .com is present if the corrected domain is a common one
-        common_domains = ['gmail', 'yahoo', 'outlook', 'hotmail']
-        if best_match in common_domains:
-            corrected_email = f"{local_part}@{best_match}.com"
+        local_part, domain = parts
 
-        return corrected_email
+        # Check if local part or domain are empty
+        if not local_part or not domain:
+            return None
 
-    return email
+        # Find the best match among correct domains
+        best_match, score = process.extractOne(domain, correct_domains, scorer=fuzz.ratio)
+
+        if score >= domain_threshold:
+            # Reconstruct email with corrected domain
+            corrected_email = f"{local_part}@{best_match}"
+
+            # Ensure .com is present if the corrected domain is a common one
+            common_domains = ['gmail', 'yahoo', 'outlook', 'hotmail']
+            if best_match in common_domains:
+                corrected_email = f"{local_part}@{best_match}.com"
+
+            return corrected_email
+
+        return email
+
+    except Exception as e:
+        # Log the error and return None for invalid emails
+        print(f"Error processing email '{email}': {str(e)}")
+        return None
+
+
+def send_emails_from_excel_main():
+    xlsx = (r'C:\Users\felipe.rsouza\Downloads\Propostas reunião com situacional (Completa 17.11) Ajustada '
+            r'(3) - PARA EMAILS E TELEFONES.xlsx')
+    #attach = (r'')
+    sender = 'assessoria.sneaelis@esporte.gov.br'
+
+    send_emails_from_excel(
+        excel_path=xlsx,
+        attachment_path='',
+        sender=sender
+    )
 
 
 if __name__ == "__main__":

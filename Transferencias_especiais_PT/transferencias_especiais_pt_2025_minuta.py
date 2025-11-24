@@ -1,4 +1,3 @@
-from dash.testing.wait import until
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -8,6 +7,7 @@ from selenium.common.exceptions import (TimeoutException, NoSuchElementException
                                         ElementClickInterceptedException, WebDriverException,
                                         StaleElementReferenceException, ElementNotInteractableException)
 from selenium.webdriver.chrome.service import Service
+from datetime import datetime
 import pandas as pd
 import time
 import sys
@@ -1260,6 +1260,53 @@ def has_actual_data(x):
     return True  # Numbers, booleans, etc.
 
 
+# Align the rows of the "Metas" column and save a new file with the current date appended to the name
+def align_meta_and_fields_with_next_custeio(output_filename=None):
+    # Read the Excel file
+    filename = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                r'Social\Teste001\Sofia\Emendas pix 2025\Emendas pix 2025_2_ciclo - Copia.xlsx')
+
+    df = pd.read_excel(filename, dtype=str)
+
+    # The fields to move together with "Meta"
+    columns_to_move = [
+        'Meta',
+        'Descrição',
+        'Unidade de Medida',
+        'Quantidade',
+        'Meses Previstos'
+    ]
+
+    # Check columns exist
+    for col in columns_to_move + ['Categoria']:
+        if col not in df.columns:
+            raise ValueError(f"The DataFrame must contain the column: {col}")
+
+    # Buffer for the values to move
+    buffer = None
+    last_custeio_idx = None
+
+    for idx, row in df.iterrows():
+        if row['Categoria'] == 'Custeio':
+            last_custeio_idx = idx
+        if row['Categoria'] == 'Investimento' and pd.notna(row['Meta']) and str(row['Meta']).strip():
+            # Buffer the entire set of fields
+            buffer = {col: row[col] for col in columns_to_move}
+            # Clear these fields from the Investimento row
+            for col in columns_to_move:
+                df.at[idx, col] = ""
+                df.at[last_custeio_idx, col] = buffer[col]
+            buffer = None  # Clear the buffer
+
+    # Output file name
+    if output_filename is None:
+        if filename.lower().endswith('.xlsx'):
+            output_filename = f'{filename[:-13]}_{datetime.now():%d_%m_%Y}.xlsx'
+
+    # Save the aligned DataFrame
+    df.to_excel(output_filename, index=False)
+    print(f"Aligned file saved as: {output_filename}")
+
 # Função principal
 def main():
     driver = conectar_navegador_existente()
@@ -1267,10 +1314,10 @@ def main():
     planilha_final = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
                       r"Social\Teste001\Sofia\Emendas pix 2025\Emendas pix 2025_2_ciclo - Copia.xlsx")
 
-    try:
-        df = pd.read_excel(planilha_final, engine='openpyxl').astype(object)
-        print(f"✅ Planilha lida com {len(df)} linhas.")
+    df = pd.read_excel(planilha_final, engine='openpyxl').astype(object)
+    print(f"✅ Planilha lida com {len(df)} linhas.")
 
+    try:
         # Volta para a pagina inicial
         clicar_elemento(driver, '/html/body/transferencia-especial-root/br-main-layout/br-header/'
                                 'header/div/div[2]/div/div[2]/div[1]/a')
@@ -1483,6 +1530,7 @@ def main():
                 continue
 
         print("✅ Todos os dados foram coletados e salvos na planilha!")
+        align_meta_and_fields_with_next_custeio()
         driver.quit()
     except Exception as erro:
         last_error = truncate_error(f"Element intercepted: {str(erro)}, {type(erro).__name__}")

@@ -1,3 +1,5 @@
+import sys
+
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -169,7 +171,7 @@ def wait_for_element(driver, xpath: str, timeout: int = 10) -> bool:
 
 
 # Navega pela primeira página e coleta os dados
-def loop_segunda_pagina(driver, source_dir: str, num_parecer: str, codigo: str) -> bool:
+def loop_segunda_pagina(driver, source_dir: str, num_parecer: str, codigo: str, file_path: str) -> bool:
     """Acessa página de análises, preenche o formulário e coloca o parecer da proposta como anexo"""
 
     lista_caminhos = [
@@ -221,13 +223,12 @@ def loop_segunda_pagina(driver, source_dir: str, num_parecer: str, codigo: str) 
         '/html/body/modal-container/div[2]/div/div[3]/button[2]'
     ]
 
-
-    texto_parecer = 'Parecer aprovado conforme anexo.'
+    texto_parecer = 'Plano de ação aprovado conforme anexo.'
     texto_desc_arq = 'Parecer MESP'
     texto_org = '308797 - Ministério do Esporte'
     texto_res_anlz = 'Aprovar Plano de Trabalho'
 
-    print(f"\n{'<' * 20}🤖 Processando parecer: {num_parecer} {'>' * 20}\n".center(50))
+    print(f"\n{'<' * 20}🤖 Processando parecer: {codigo} {'>' * 20}\n".center(50))
     # Aba Análises
     clicar_elemento(driver, lista_caminhos[0])
     remover_backdrop(driver, False)
@@ -266,7 +267,7 @@ def loop_segunda_pagina(driver, source_dir: str, num_parecer: str, codigo: str) 
         )
         discard_btn.click()
         if discard:
-            save_prop_with_pop(source_dir, codigo)
+            save_prop_with_pop(file_path, codigo)
         return False
 
     # Resultado da Análise
@@ -296,7 +297,7 @@ def loop_segunda_pagina(driver, source_dir: str, num_parecer: str, codigo: str) 
         )
         discard_btn.click()
         if discard:
-            save_prop_with_pop(source_dir, codigo)
+            save_prop_with_pop(file_path, codigo)
         return False
 
     # Coloca o texto de parecer
@@ -315,7 +316,7 @@ def loop_segunda_pagina(driver, source_dir: str, num_parecer: str, codigo: str) 
         )
         discard_btn.click()
         if discard:
-            save_prop_with_pop(source_dir, codigo)
+            save_prop_with_pop(file_path, codigo)
         return False
 
     # Anexa arquivo parecer
@@ -335,7 +336,7 @@ def loop_segunda_pagina(driver, source_dir: str, num_parecer: str, codigo: str) 
         print(f'⚠️ Falha fatal {type(e).__name__} ao anexar arquivo na aba de análise.\nErro{str(e)[:100]}\n')
         discard = discar_butn(driver)
         if discard:
-            save_prop_with_pop(source_dir, codigo)
+            save_prop_with_pop(file_path, codigo)
         return False
 
 
@@ -355,7 +356,7 @@ def anexar_parecer(driver, path_list: list, source_dir: str, texto_desc_arq: str
         clicar_elemento(driver,path_list[0])
         remover_backdrop(driver, False)
         time.sleep(1)
-        # Coloca o testo do novo arquivo
+        # Coloca o texto do novo arquivo
         desc_arq = driver.find_element(By.XPATH, path_list[1])
         desc_arq.click()
         desc_arq.send_keys(texto_desc_arq)
@@ -387,7 +388,7 @@ def anexar_parecer(driver, path_list: list, source_dir: str, texto_desc_arq: str
         return False
 
 # saves the proposal that promped a pop-up due to it been already filled
-def save_prop_with_pop(source_dir, codigo):
+def save_prop_with_pop(file_path, codigo):
     """
         Find rows where Column A matches search_value exactly,
         then write to Column C in those rows.
@@ -397,7 +398,7 @@ def save_prop_with_pop(source_dir, codigo):
             num_parecer: Value to match in Column A (case sensitive)
         """
     # Read the Excel file
-    df = pd.read_excel(source_dir)
+    df = pd.read_excel(file_path)
     # Find exact matches in Column A
     col_a = df.iloc[: , 0]
     match_loc = col_a[col_a == codigo]
@@ -407,7 +408,7 @@ def save_prop_with_pop(source_dir, codigo):
         # Write data to Column C (index 2) in these rows
         df.iloc[row_idx, 2] = 'Feito'
         # Save back to Excel
-        df.to_excel(source_dir, index=False, dtype=str)
+        df.to_excel(file_path, index=False, dtype=str)
         print(f"Successfully wrote to row: {row_idx+2}")
 
         return True
@@ -431,8 +432,7 @@ def select_files_by_suffix(source_dir, num_parecer):
                 if not os.path.isfile(full_path):
                     continue
                 base = os.path.splitext(filename)[0]
-                parts = base.split('_')[0]
-                sub_parts = parts.split('-')[-1]
+                sub_parts = base.split(' ')[-1]
                 if sub_parts == num_parecer:
                     return full_path  # Return immediately on first match
     except Exception as erro:
@@ -445,7 +445,7 @@ def main():
     driver = conectar_navegador_existente()
 
     planilha_final = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-               r'Social\Teste001\Sofia\Pareceres_SEi\processos_DB - Copia.xlsx')
+               r'Social\Teste001\Sofia\Pareceres_SEi\Pareceres de Aprovações 2025.xlsx')
 
     source_dir = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
                   r'Social\Teste001\Sofia\Pareceres_SEi')
@@ -455,9 +455,9 @@ def main():
         df.columns = [col.strip() for col in df.columns]
         print(f"✅ Planilha lida com {len(df)} linhas.")
 
-        if df["Código do Plano de Ação"].duplicated().any():
+        if df["PLANOS DE AÇÃO APROVADOS"].duplicated().any():
             print("⚠️ Aviso: Há códigos duplicados na planilha. Removendo duplicatas...")
-            df = df.drop_duplicates(subset=["Código do Plano de Ação"], keep="first")
+            df = df.drop_duplicates(subset=["PLANOS DE AÇÃO APROVADOS"], keep="first")
             df.to_excel(planilha_final, index=False)
 
         # Clica no que menu de navegação
@@ -474,7 +474,7 @@ def main():
             if not pd.isna(row["Já Feito"]):
                 print(f'📝⏭️ Proposta com parecer enviado. Pulando linha {index}...')
                 continue
-            codigo = str(row["Código do Plano de Ação"])  # Garante que o código seja string
+            codigo = str(row["PLANOS DE AÇÃO APROVADOS"])  # Garante que o código seja string
             num_parecer = str(row["Parecer"]).strip()  # Garante que o código seja string
 
             print(f"\n⚙️ Processando código: {codigo} (índice: {index})\n")
@@ -562,9 +562,9 @@ def main():
                 if loop_segunda_pagina(driver=driver,
                                        source_dir=source_dir,
                                        num_parecer=num_parecer,
-                                       codigo=codigo):
-                    df.iloc[index, 3] = "Sim"  # Column index 2 is 'D'
-                    df.to_excel(planilha_final, index=False)
+                                       codigo=codigo,
+                                       file_path=planilha_final):
+                    save_prop_with_pop(file_path= planilha_final, codigo=codigo)
                 # Sobe para o topo da página
                 driver.execute_script("window.scrollTo(0, 0);")
                 # Clica em "Filtrar" para o próximo código
