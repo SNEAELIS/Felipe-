@@ -7,14 +7,14 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 from datetime import datetime, timedelta
-#from itertools import islice
+import sys
 import pandas as pd
 import time
 import os
-#import win32com.client as win32
-import sys
+import csv
 import shutil
 import json
+
 
 class Robo:
     def __init__(self):
@@ -22,6 +22,9 @@ class Robo:
         Inicializa o objeto Robo, configurando e iniciando o driver do Chrome.
         """
         try:
+            # Contador para o número de links encontrados
+            self.contador = 0
+
             # Configuração do registro
             # Inicia as opções do Chrome
             self.chrome_options = webdriver.ChromeOptions()
@@ -33,9 +36,14 @@ class Robo:
                 service=Service(ChromeDriverManager().install()),
                 options=self.chrome_options)
 
-            handles = self.driver.window_handles
-            print(handles)
-            self.driver.switch_to.window(handles[-1])
+            qnt_abas = self.driver.window_handles
+            for handle in qnt_abas:
+                self.driver.switch_to.window(handle)
+                url = self.driver.current_url
+                if "chrome" in url:
+                    qnt_abas.remove(handle)
+
+            self.driver.switch_to.window(qnt_abas[0])
 
             print("✅ Conectado ao navegador existente com sucesso.", "\nCurrent URL:",
                   self.driver.current_url)
@@ -246,6 +254,8 @@ class Robo:
         data_hoje = self.data_hoje()
         tempo_final = time.time() + tempo_limite
         self.permuta_nome_arq(pasta_download)
+
+        counter = 0
         while time.time() < tempo_final:
             try:
                 for arq in os.listdir(pasta_download):
@@ -256,11 +266,13 @@ class Robo:
                     if data_mod >= data_hoje:
                         # Move o arquivo para a pasta destino
                         shutil.move(caminho_arq, os.path.join(caminho_pasta, arq))
-                print(f'📂🚚 Arquivos Moviemntados')
+                        counter += 1
                 if not os.listdir(pasta_download):
                     break
             except Exception as e:
                 print(f'❌ Falha ao mover arquivo {e}')
+
+        print(f'📂🚚 Arquivos Movimentados. Total de arquivos: {counter}')
 
     # Cria uma pasta com o nome especificado no one-drive e retorna o caminho.
     def criar_pasta(self, nome_pasta: str, caminho_pasta_onedrive: str, tipo_instrumento: str) -> str:
@@ -325,8 +337,8 @@ class Robo:
                tipo_instrumento_id (str): Nome da coluna que contém o tipo de processo.
            """
         dados_processo = pd.read_excel(caminho_arquivo_fonte, dtype=str)
-        dados_processo.replace(u'\xa0', '', regex=True).infer_objects(copy=True)
-
+        dados_processo = dados_processo.replace(u'\xa0', '', regex=True)
+        dados_processo = dados_processo.infer_objects(copy=False)
 
         # Cria um lista para cada coluna do arquivo xlsx
         numero_processo = list()
@@ -370,7 +382,7 @@ class Robo:
         try:
             # Reseta para página inicial
             time.sleep(0.3)
-            reset = self.driver.find_element(By.XPATH, '//*[@id="logo"]/a/span/img')
+            reset = self.driver.find_element(By.XPATH, '//*[@id="logo"]/a/img')
             if reset:
                 reset = self.driver.find_element(By.XPATH, '/html[1]/body[1]/div[3]/div[2]/div[1]/a[1]/img[1]')
                 reset.click()
@@ -449,11 +461,17 @@ class Robo:
                     Keys.CONTROL).perform()
             print(f"✅ {len(links)} abas abertas com sucesso.")
             abas = self.driver.window_handles
+            for handle in abas:
+                self.driver.switch_to.window(handle)
+                url = self.driver.current_url
+                if "chrome" in url:
+                    abas.remove(handle)
+
             return int(len(abas))
         except Exception:
             print(f"❌ Erro ao abrir abas ")
 
-    # Muda para a aba de índice 1
+    # Muda para a aba de índice dado pelo argumento num_aba
     def muda_aba(self, num_aba: int):
         """
         Muda o foco para a aba especificada pelo índice.
@@ -462,10 +480,15 @@ class Robo:
         time.sleep(0.3)
         try:
             qnt_abas = self.driver.window_handles
+            for handle in qnt_abas:
+                self.driver.switch_to.window(handle)
+                url = self.driver.current_url
+                if "chrome" in url:
+                    qnt_abas.remove(handle)
+
             self.driver.switch_to.window(qnt_abas[num_aba])
-            print(f"🔁 Mudou para a aba {num_aba}.")
         except Exception as e:
-            print(f"❌ Falha ao tentar mudar de aba.\nError: {type(e).__name__}")
+            print(f"❌ Falha ao tentar mudar de aba.\nError: {type(e).__name__}.\nFalha: {str(e)[:80]}")
 
     # fecha a aba atual
     def fecha_aba(self):
@@ -474,7 +497,6 @@ class Robo:
         """
         try:
             self.driver.close()
-            print(f"💀 Aba fechada com sucesso.\n")
         except Exception:
             print(f"❌ Não consegui fechar a aba.")
 
@@ -508,15 +530,28 @@ class Robo:
     # Baixa os arquivos
     def baixa_arquivo(self, linhas):
         # Separa as linhas da tabela para acessar os links individuais
+        self.conta_arquivos(linhas=linhas)
+
+        for linha in linhas[1: ]:
+            try:
+                # Pega o elemento do botão de download e deixa selecionado
+                botao_download = WebDriverWait(linha, 3).until(
+                    EC.element_to_be_clickable((By.CLASS_NAME, 'buttonLink')))
+                if botao_download:
+                    continue
+                    botao_download.click()
+            except:
+                print('❌ Botã de download não encontrado.')
+
+    def conta_arquivos(self, linhas):
         for linha in linhas[1: ]:
             try:
                 # Pega o elemento do botão de download e deixa selecionado
                 botao_download = WebDriverWait(linha, 10).until(
                     EC.element_to_be_clickable((By.CLASS_NAME, 'buttonLink')))
                 if botao_download:
-                    botao_download.click()
-                    print(f'💾{linha.find_element(By.CLASS_NAME,'nomeArquivo').text}\n')
-            except Exception as e :
+                    self.contador += 1
+            except:
                 print('❌ Botã de download não encontrado.')
 
     # Salva o progresso em um arquivo json
@@ -571,7 +606,23 @@ class Robo:
         # Salva os dados vazios no arquivo JSON
         with open(arquivo_log, 'w', encoding='utf-8') as arq:
             json.dump(dados_vazios, arq, indent=4)
-    #
+
+    # Salva quantidade de itens encontrados em arquivo csv.
+    def salva_qtd(self, file_path, draft_num: str,):
+        file_exists = os.path.exists(file_path)
+
+        with open(file_path, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+
+            if not file_exists:
+                writer.writerow(['Proposta', 'Qtd_Itens'])
+
+            writer.writerow([draft_num, self.contador])
+
+
+def conta_arquivos(caminho_pasta):
+    return sum(1 for item in os.listdir(caminho_pasta)
+               if os.path.isfile(os.path.join(caminho_pasta, item)))
 
 def main():
     pasta_download = r'C:\Users\felipe.rsouza\Downloads'
@@ -586,10 +637,15 @@ def main():
     cgac_arquivo_log = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
                         r'Assistência Social\Automações SNEAELIS\CGAC_2024\CGAC_arquivo_log.json')
 
+    arq_contador = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Automações '
+                    r'SNEAELIS\CGAC_2024\conta_arquivos.csv')
+
 
     # XPaths para navegação e limpeza de campos
                         #  Próxima página                         Limpar Campos
     loop_saida_bug = ["//a[normalize-space()='Próx']", "//td[@class='FormLinhaBotoes']//input[2]"]
+
+    total_file = dict()
 
     robo = Robo()
 
@@ -597,7 +653,6 @@ def main():
     numero_processo, tipo_instrumento= robo.extrair_dados_excel(caminho_arquivo_fonte=caminho_arquivo_fonte,
                                                                 busca_id='Nº CONVÊNIO',
                                                                 tipo_instrumento_id='MODO')
-    numero_processo = ['929833']
 
     max_linha = len(numero_processo)
 
@@ -614,16 +669,26 @@ def main():
         min_linha = progresso["indice"]
     else:
         min_linha = 0
+
+    rmk = ['941070', '941666', '941407', '888699', '882017', '897333', '940697', '909989', '909765', '913320', '928420', '925902', '925901', '897751', '954489', '740366', '897676', '935351', '943210', '897785', '936889', '922808', '941154', '905377', '928318', '898083', '917388', '909986', '930085', '940945', '920631', '924083', '934702', '910735', '898406', '881440', '942809']
+
+
+
     # Loop principal para processar cada linha do Excel
     for indice in range(min_linha, max_linha):
-        print(f'Processo: {numero_processo[indice]}.\n Índice: {indice} do total: {max_linha}')
+        print(f'Processo: {numero_processo[indice]}.\n Índice: {indice} do total: {max_linha-1}')
+
+        if numero_processo[indice] in ['878411', '881200', '898261', '905061', '936600']:
+            continue
+        elif numero_processo[indice] not in rmk:
+            continue
 
         # Salva o progresso atual no arquivo de log
         robo.salva_progresso(cgac_arquivo_log, numero_processo[indice], indice)
         robo.consulta_instrumento()
         loop = robo.loop_instrumentos(numero_processo[indice])
 
-        # Salva o númro do processo que causou erro no loop
+        # Salva o número do processo que causou erro no loop
         if loop:
             with open(r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
                       r'Social\Power BI\Python\Requerimento de serviço\CGAG(Cássia)\log_erros.txt', 'a'
@@ -730,13 +795,73 @@ def main():
         # Cria pasta de destino e transfere arquivos baixados
         robo.espera_completar_download(pasta_download=pasta_download)
         robo.transfere_arquivos(caminho_pasta=pasta_destino_final, pasta_download=pasta_download)
+        print(f'Número de arquivos na pasta final: {conta_arquivos(caminho_pasta=pasta_destino_final)}.\nNúmero de '
+              f'links encontrados: {robo.contador} ')
+        total_file[numero_processo[indice]] = robo.contador
 
+        robo.salva_qtd(file_path=arq_contador, draft_num=numero_processo[indice])
+        robo.contador = 0
+
+    return total_file
+
+
+def cont_files_dir():
+    root_dir = (
+        r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Automações SNEAELIS\CGAC_2024')
+    files_per_dir = dict()
+
+    for root, dirs, files in os.walk(root_dir):
+        for d in dirs:
+            try:
+                base_name = d.split('_')[0]
+            except IndexError:
+                # Handle directory names without an underscore
+                base_name = d
+
+            try:
+                cnt = 0
+
+                for f in os.listdir(os.path.join(root, d)):
+                    f_path = os.path.join(root, d, f)
+                    if os.path.isfile(f_path):
+                        cnt += 1
+            except:
+                print(f"Warning: Could not access directory {os.listdir(os.path.join(root, d))} due to permission "
+                      f"error. Skipping.")
+                continue  # Skip to the next directory
+
+            if base_name not in files_per_dir:
+                files_per_dir[base_name] = cnt
+
+    return files_per_dir
+
+
+def compare_dict(dict_1: dict, dict_2: dict):
+    def salve_to_txt(err_keys, file_path):
+        line = f'{err_keys}\n'
+        with open(file_path, 'a', encoding='utf-8') as f:
+            f.write(line)
+
+    file_path = r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Automações SNEAELIS\CGAC_2024\diff_.txt'
+    err_keys = list()
+
+    for key in dict_1:
+        if key in dict_2:
+            if dict_1[key] != dict_2[key]:
+                err_keys.append(key)
+        else:
+            print(f"Key '{key}': DISPARITY FOUND! (Key missing in Dict2)")
+    salve_to_txt(err_keys=err_keys, file_path=file_path)
+    print(err_keys)
 
 
 if __name__ == "__main__":
     start_time = time.time()
 
-    main()
+    total_file_site = main()
+    total_file_dir = cont_files_dir()
+
+    compare_dict(total_file_site, total_file_dir)
 
     end_time = time.time()
     tempo_total = end_time - start_time

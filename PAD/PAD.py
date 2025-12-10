@@ -53,7 +53,7 @@ class Robo:
                 print(f"Error with ChromeDriverManager: {e}")
                 sys.exit()
 
-            self.driver.switch_to.window(self.driver.window_handles[0])
+            #self.driver.switch_to.window(self.driver.window_handles[0])
 
             # Defines Logger
             self.logger = self.setup_logger()
@@ -192,6 +192,9 @@ class Robo:
                 else:
                     print("No match found!")
 
+            # Volta para os dados da proposta
+            self.webdriver_element_wait('//*[@id="lnkConsultaAnterior"]').click()
+
             return endereco, cep, cod_municipio
         except TimeoutException:
             raise BreakInnerLoop
@@ -237,9 +240,6 @@ class Robo:
         time.sleep(1)
         try:
             print(f'🚢 Navegando para o plano de ação detalhado:'.center( 50, '-'), '\n')
-            # Volta para os dados da proposta
-            self.webdriver_element_wait('//*[@id="lnkConsultaAnterior"]').click()
-
             # Aba Plano de trabalho
             self.webdriver_element_wait('//*[@id="div_997366806"]').click()
 
@@ -510,6 +510,7 @@ class Robo:
             time.sleep(1)
             self.driver.find_elements(By.CSS_SELECTOR, "input#form_submit")[1].click()
             time.sleep(1)
+
             self.consulta_proposta()
             return True
 
@@ -552,6 +553,77 @@ class Robo:
         except Exception as e:
             print(f"\n‼️ Erro fatal ao inserir PAD: {type(e).__name__}\nErro == {str(e)[:100]}")
             sys.exit("Parando o programa.")
+
+    def check_total_value(self, total_value, numero_processo) -> bool:
+        try:
+            print(f"{'🔍' * 3}📋 CHECKING TOTAL VALUES 📋{'🔍' * 3}".center(80, '='))
+            print()
+
+            self.consulta_proposta()
+            self.campo_pesquisa(numero_processo=numero_processo)
+            self.nav_plano_act_det()
+
+            total_element = self.webdriver_element_wait("//div[@id='valoresTotais']//tbody[@id='tbodyrow']//tr[last("
+                                                        ")]//div[@class='valorTotal']")
+            total_site = total_element.text
+
+            try:
+                 # Clean and compare
+                total_site_clean = total_site.replace('R$', '').replace('.', '').replace(',', '').replace('0','').strip().strip()
+                total_value_clean = (total_value.replace('R$', '').replace('.', '').replace(',', '').
+                                     replace('0', '').strip())
+
+                print(f'Valor site: {total_site_clean}.\nValor planilha: {total_value_clean}')
+
+                return total_site_clean == total_value_clean
+
+
+            except AttributeError:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                print(f"AttributeError: One of the values is not a string")
+                print(f"  total_site type: {type(total_site).__name__}")
+                print(f"  total_value type: {type(total_value).__name__}")
+                return False
+            except TypeError as te:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                print(f"TypeError: {str(te)}")
+                print(f"  total_site: {repr(total_site)}")
+                print(f"  total_value: {repr(total_value)}")
+                return False
+            except UnicodeDecodeError:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                print(f"UnicodeDecodeError: String contains invalid characters")
+                print(f"  total_site encoding issue")
+                return False
+            except Exception as e:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                print(f"Unexpected error during string cleaning: {type(e).__name__}: {str(e)[:100]}")
+                return False
+
+        except TimeoutException:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
+            print("Error: Timeout waiting for TOTAL GERAL element")
+            return False
+        except NoSuchElementException:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
+            print("Error: TOTAL GERAL element not found")
+            return False
+        except ValueError as ve:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
+            print(f"Error converting values to float: {str(ve)[:100]}")
+            return False
+        except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
+            print(f"Unexpected error: {str(e)[:100]}")
+            return False
 
 
     @staticmethod
@@ -757,8 +829,7 @@ def map_description(grouped_df):
 
 def main() -> None:
     # Caminho do arquivo .xlsx que contem os dados necessários para rodar o robô
-    dir_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                r'Social\SNEAELIS - Robô PAD')
+    dir_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Robô PAD')
     try:
         # Instancia um objeto da classe Robo
         robo = Robo()
@@ -817,7 +888,12 @@ def main() -> None:
                 numero_processo = robo.fix_prop_num(numero_processo_temp)
 
                 cnpj_xlsx = df.loc[df[0] == 'CNPJ:', 1].iloc[0]
+                # Get total value
+                total_value = df.loc[df[0] == 'TOTAL', 24].iloc[0]
+                formatted_value = f"R$ {float(total_value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                print(f'💰 Total Value: {formatted_value:>20} '.center(70, '═'))
 
+                # Get unique values
                 unique_values = []
                 unique_values_col_b = df[1].unique()
                 # first occurrence index
@@ -867,10 +943,9 @@ def main() -> None:
                                                               tipo_desp=value,
                                                               cod_natur_desp=robo.map_cod_natur_desp(
                                                                   dict_cod=cod_natureza_despesa,
-                                                                  cod=value
-                                                              ),
+                                                                  cod=value),
                                                               cnpj_xlsx=cnpj_xlsx,
-                                                              caminho_arquivo_fonte=caminho_arquivo_fonte
+                                                              caminho_arquivo_fonte=caminho_arquivo_fonte,
                                                               )
                                     except BreakInnerLoop:
                                         print("⚠️ Stopping this unique_values loop early.")
@@ -904,8 +979,8 @@ def main() -> None:
                                                         cod=value
                                                         ),
                                                   cnpj_xlsx=cnpj_xlsx,
-                                                  caminho_arquivo_fonte = caminho_arquivo_fonte
-                                                  )
+                                                  caminho_arquivo_fonte = caminho_arquivo_fonte,
+                                              )
                     except BreakInnerLoop:
                         print("⚠️ Stopping this unique_values loop early.")
                         break
@@ -918,28 +993,50 @@ def main() -> None:
                         print(f"❌ Falha ao executar script. Erro: {type(e).__name__}\n{str(e)[:100]}")
                         sys.exit(0)  # Exit gracefully
                 else:
-                    print(caminho_arquivo_fonte)
-                    robo.logger.info(f'Sucesso em adicionar o PAD da proposta {numero_processo}, '
-                                     f'deletando arquivo {caminho_arquivo_fonte}')
-                    robo.delete_path(caminho_arquivo_fonte)
+                    if robo.check_total_value(total_value=total_value, numero_processo=numero_processo):
+                        print(f'Valores são compativeis!\n')
+                        robo.logger.info(f'Sucesso em adicionar o PAD da proposta {numero_processo}, '
+                                         f'deletando arquivo {caminho_arquivo_fonte}')
+
+                        robo.delete_path(caminho_arquivo_fonte)
+                    else:
+                        print(f'Valores são incompatíveis!\n')
+                        robo.logger.info(f'Falha em adicionar o PAD da proposta {numero_processo}. Divergencia nos valores totais da propsota.')
 
 
+
+
+def get_valid_input():
+    while True:
+        try:
+            run = int(input('What type of run do you want?\n1 for single run, 2 for multiple runs\n'))
+            if run in [1, 2]:
+                return run
+            else:
+                print('Please enter either 1 or 2')
+        except KeyboardInterrupt:
+            print('\nOperation cancelled by user')
+            sys.exit()
+        except Exception as e:
+            print(f'Error: {e}. Please try again.')
 
 
 if __name__ == "__main__":
 
-     main()
-'''
-    for i in range(20):
-        cycle_start = time.time()
-        print(f"\n{'=' * 50}")
-        print(f"🔄 CYCLE {i + 1}/20 started at: {datetime.now().strftime('%H:%M:%S')}")
-        print(f"{'=' * 50}")
+    run  = get_valid_input()
 
+    if run == 1:
         main()
+    else:
+        for i in range(20):
+            cycle_start = time.time()
+            print(f"\n{'=' * 50}")
+            print(f"🔄 CYCLE {i + 1}/20 started at: {datetime.now().strftime('%H:%M:%S')}")
+            print(f"{'=' * 50}")
 
-        cycle_time = time.time() - cycle_start
+            main()
 
-        print(f"\n⏱️ Cycle {i + 1} took: {cycle_time / 60:.2f} minutes")
-        time.sleep(1600)
-'''
+            cycle_time = time.time() - cycle_start
+
+            print(f"\n⏱️ Cycle {i + 1} took: {cycle_time / 60:.2f} minutes")
+            time.sleep(1600)
