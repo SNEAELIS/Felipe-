@@ -45,7 +45,6 @@ class Robo:
         """
         Inicializa o objeto Robo, configurando e iniciando o driver do Chrome.
         """
-        # Login
         # Chrome setup
         self.chrome_process = None
         self.website_url = r'https://idp.transferegov.sistema.gov.br/idp/'
@@ -1032,3 +1031,4 @@ class Robo:
             print(f"🗑️ Directory deleted: {path}")
         else:
             print(f"⚠️ Unknown type (not file/dir): {path}")
+# 888
