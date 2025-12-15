@@ -53,7 +53,14 @@ class Robo:
                 print(f"Error with ChromeDriverManager: {e}")
                 sys.exit()
 
-            #self.driver.switch_to.window(self.driver.window_handles[0])
+            qnt_abas = self.driver.window_handles
+            for handle in qnt_abas:
+                self.driver.switch_to.window(handle)
+                url = self.driver.current_url
+                if "chrome" in url:
+                    qnt_abas.remove(handle)
+
+            self.driver.switch_to.window(qnt_abas[0])
 
             # Defines Logger
             self.logger = self.setup_logger()
