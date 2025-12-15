@@ -46,9 +46,6 @@ class Robo:
         Inicializa o objeto Robo, configurando e iniciando o driver do Chrome.
         """
         # Login
-        self.__credentials = '03673063103'
-        self.__passcode = 'London!23'
-
         # Chrome setup
         self.chrome_process = None
         self.website_url = r'https://idp.transferegov.sistema.gov.br/idp/'
