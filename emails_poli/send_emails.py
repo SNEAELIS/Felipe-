@@ -17,50 +17,49 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
         attachment_path (string): Attachment file paths (optional)
         sender (str): Email address to send from (optional)
     """
-
     def read_excel_data():
         """
         Read email data from Excel file
         Returns: List
         """
+        unique_emails = set()
+        correct_email_xlsx = list()
+        final_email_set = set()
+
         try:
-            df = pd.read_excel(excel_path, dtype=str, sheet_name='Planilha1')
+            excel_file = pd.ExcelFile(excel_path)
+            sheets_to_process = excel_file.sheet_names
+            print(sheets_to_process)
 
-            # Cria um lista para cada coluna do arquivo xlsx
-            email_xlsx = list()
-            entidade_xlsx = list()
+            for sheet in sheets_to_process:
+                print(f"Processing sheet: {sheet}")
 
-            try:
-                pd.read_excel(excel_path, dtype=str, sheet_name='Status')
-                print(f'Sheet found!')
-            except ValueError:
-                print(f'Sheet NOT found !')
-                print(f'Creating Sheet !')
-                # Create new status DataFrame if sheet doesn't exist
-                status_df = pd.DataFrame({
-                    'Index': df.index,
-                    'Status': [''] * len(df)
-                })
-                with pd.ExcelWriter(excel_path, engine='openpyxl', mode='a',
-                                    if_sheet_exists='replace') as writer:
-                    status_df.to_excel(writer, sheet_name='Status', index=False)
+                df = pd.read_excel(excel_path, dtype=str, sheet_name=sheet)
+                if 'Proponente' in df.columns:
+                    column_values = df['Proponente'].dropna().astype(str).str.strip()
+                    unique_emails.update(column_values)
 
-
-            print(len(df))
-
-            # Itera a planilha e armazena os dados em listas
-            for indice, linha in df.iterrows():  # Assume que a primeira linha e um cabeçalho
-                email_xlsx.append(linha["EMAIL AUTOR"])  # Busca destinatário do email
-                entidade_xlsx.append(linha["Autor"])  # Busca o destinatário da mensagem
+                print(f'total data_frame size: {len(df)}\nunique values: {len(unique_emails)}')
 
             # Fix domain problems
-            correct_email_xlsx = [correct_email_domain(e) for e in email_xlsx]
+            for e in unique_emails:
+                if not '@' in e:
+                    continue
+                if ' ' in e :
+                    e = e.split(' ')[-1]
+                correct_email_xlsx.append(correct_email_domain(e))
 
-            return entidade_xlsx, correct_email_xlsx
+            for i in correct_email_xlsx:
+                final_email_set.add(i)
+
+            print(f'{len(correct_email_xlsx)} and {len(final_email_set)}')
+
+            return final_email_set
 
         except Exception as e:
             print(f"❌ Failed to read Excel file: \n{e}")
             return []
+
 
     def mark_as_done(index, file_path):
         """Safely mark row as done and save to Excel"""
@@ -87,7 +86,6 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
         except Exception as err:
             print(f"❌ Error in mark_as_done: {str(err)[:100]}\n")
             return False
-
 
 
     def send_email_outlook():
@@ -143,7 +141,7 @@ Ministério do Esporte</p>
 """
         return set_subject, set_html_body
 
-    entidade_data, email_data = read_excel_data()
+    email_data = read_excel_data()
 
     if not email_data:
         print("No data found in Excel file")
@@ -153,7 +151,7 @@ Ministério do Esporte</p>
     for index, email in enumerate(email_data):
         if not email:
             continue
-        entidade = entidade_data[index]
+        #entidade = entidade_data[index]
         attachment = attachment_path
         subject, html_body = create_email_content()
 
@@ -231,8 +229,7 @@ def correct_email_domain(email, domain_threshold=80, correct_domains=None):
 
 
 def send_emails_from_excel_main():
-    xlsx = (r'C:\Users\felipe.rsouza\Downloads\Propostas reunião com situacional (Completa 17.11) Ajustada '
-            r'(3) - PARA EMAILS E TELEFONES.xlsx')
+    xlsx = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\propostas_sneaelis.xlsx"
     #attach = (r'')
     sender = 'assessoria.sneaelis@esporte.gov.br'
 
