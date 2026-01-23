@@ -700,16 +700,24 @@ class Robo:
     def setup_logger(level=logging.INFO):
         log_file_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
                          r'Social\SNEAELIS - Robô PAD')
+        secondary_log_file_path = r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Logs_PAD'
 
         # Create logs directory if it doesn't exist
         log_file_name = f'log_PAD_{datetime.now().strftime('%d_%m_%Y')}.log'
 
         # Sends to specific directory
         log_file = os.path.join(log_file_path, log_file_name)
+        secondary_log_file = os.path.join(secondary_log_file_path, log_file_name)
 
+        # Create primary log dir
         if not os.path.exists(log_file_path):
             os.makedirs(log_file_path)
             print(f"✅ Directory created/verified: {log_file_path}")
+
+        # Create secondary log dir
+        if not os.path.exists(secondary_log_file_path):
+            os.makedirs(secondary_log_file_path)
+            print(f"✅ Directory created/verified: {secondary_log_file_path}")
 
         logger = logging.getLogger()
         if logger.handlers:
@@ -724,27 +732,43 @@ class Robo:
         )
 
         # File handler with rotation
-        file_handler = logging.handlers.RotatingFileHandler(
+        primary_handler  = logging.handlers.RotatingFileHandler(
             log_file,
             maxBytes=10485760,
             backupCount=5,
             encoding='utf-8'
         )
-        file_handler.setFormatter(formatter)
+        primary_handler .setFormatter(formatter)
 
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
 
-        logger.addHandler(file_handler)
+        # File handler for secondary log
+        secondary_handler  = logging.handlers.RotatingFileHandler(
+            secondary_log_file,
+            maxBytes=10485760,
+            backupCount=5,
+            encoding='utf-8'
+        )
+        secondary_handler .setFormatter(formatter)
+
+        # Create logger handlers
+        logger.addHandler(primary_handler)
+        logger.addHandler(secondary_handler)
         logger.addHandler(console_handler)
 
-        if os.path.exists(log_file):
-            print(f"🎉 SUCCESS! Log file created at: {log_file}")
-            print(f"📊 File size: {os.path.getsize(log_file)} bytes")
+        # Bool for log files
+        primary_exists = os.path.exists(log_file)
+        secondary_exists = os.path.exists(secondary_log_file)
+
+        if primary_exists and secondary_exists:
+            print(f"🎉 SUCCESS! Primary log file created at: {log_file}")
+            print(f"📋 Secondary log file created at: {secondary_log_file}")
+
             return logger
         else:
             print(f"❌ File not created at: {log_file}")
-
+            sys.exit()
 
     @staticmethod
     # Mapeia os tipos de despesas nos quatro tipos disponíveis no transferegov
