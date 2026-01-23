@@ -53,12 +53,7 @@ class Robo:
                 print(f"Error with ChromeDriverManager: {e}")
                 sys.exit()
 
-            qnt_abas = self.driver.window_handles
-            for handle in qnt_abas:
-                self.driver.switch_to.window(handle)
-                url = self.driver.current_url
-                if "chrome" in url:
-                    qnt_abas.remove(handle)
+            qnt_abas = self.skip_chrome_tab_search()
 
             self.driver.switch_to.window(qnt_abas[0])
 
@@ -93,6 +88,16 @@ class Robo:
         except Exception as e:
             raise e
 
+
+    def skip_chrome_tab_search(self):
+        qnt_abas = self.driver.window_handles
+        for handle in qnt_abas:
+            self.driver.switch_to.window(handle)
+            url = self.driver.current_url
+            if "chrome" in url:
+                qnt_abas.remove(handle)
+
+        return  qnt_abas
 
     # Navega até a página de busca da proposta
     def consulta_proposta(self):
@@ -213,16 +218,16 @@ class Robo:
 
     # Insere o código na janela de seleção de município
     def cod_mun(self, cod_municipio):
-       #print(f"{'🔎' * 3}🏙️ BUSCANDO CÓDIGO DO MUNICÍPIO 🏙️{'🔎' * 3}".center(80, '='))
+        #print(f"{'🔎' * 3}🏙️ BUSCANDO CÓDIGO DO MUNICÍPIO 🏙️{'🔎' * 3}".center(80, '='))
 
         try:
-            WebDriverWait(self.driver, 20).until(EC.number_of_windows_to_be(2))
+
             current_window = self.driver.current_window_handle
-            windows = self.driver.window_handles
+            windows = self.skip_chrome_tab_search()
             for win in windows:
                 if win != current_window:
                     self.driver.switch_to.window(win)
-                    time.sleep(1)
+                    time.sleep(0.5)
             # Campo de inserção do número de código
             campo_prenchimento = self.webdriver_element_wait('//*[@id="consultarCodMunicipio"]')
             campo_prenchimento.clear()
@@ -783,7 +788,7 @@ class Robo:
                                if not unicodedata.combining(c))
 
             categories = {
-                'BEM': ['Material Esportivo', 'Uniformes', 'Alimentação', 'Bem'],
+                'BEM': ['Material Esportivo', 'Uniformes', 'Alimentação', 'Bem', 'Material Esportivo com Cotação'],
                 'SERVICO': ['Recursos Humanos', 'Administrativa', 'Serviços', 'Identidades/Divulgações',
                             'Eventos', 'SERVIÇO'],
                 'OBRA': ['obra'],
@@ -867,7 +872,8 @@ def main() -> None:
                     'identidades/divulgações': '33903963',
                     'identidades': '33903963',
                     'divulgações': '33903963',
-                    'tributo': '33904718'
+                    'tributo': '33904718',
+                    'material esportivo com cotação': '33903014',
                 }
 
                 # DataFrame do arquivo excel
@@ -1030,20 +1036,6 @@ def get_valid_input():
 
 if __name__ == "__main__":
 
-    run  = get_valid_input()
+    #run  = get_valid_input()
 
-    if run == 1:
-        main()
-    else:
-        for i in range(20):
-            cycle_start = time.time()
-            print(f"\n{'=' * 50}")
-            print(f"🔄 CYCLE {i + 1}/20 started at: {datetime.now().strftime('%H:%M:%S')}")
-            print(f"{'=' * 50}")
-
-            main()
-
-            cycle_time = time.time() - cycle_start
-
-            print(f"\n⏱️ Cycle {i + 1} took: {cycle_time / 60:.2f} minutes")
-            time.sleep(1600)
+    main()
