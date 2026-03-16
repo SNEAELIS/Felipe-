@@ -1,3 +1,4 @@
+import types
 import os.path
 import shutil
 import time
@@ -8,7 +9,8 @@ import logging.handlers
 import logging
 
 import pandas as pd
-import numpy as np
+
+from decimal import Decimal, ROUND_CEILING
 
 from datetime import datetime
 
@@ -26,6 +28,7 @@ from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver import ActionChains
+from selenium.webdriver.chrome.service import Service
 
 class BreakInnerLoop(Exception):
     pass
@@ -37,6 +40,10 @@ class Robo:
         Inicializa o objeto Robo, configurando e iniciando o driver do Chrome.
         """
         try:
+            self.endereco = None
+            self.cep = None
+            self.cod_municipio = None
+
             # Configuração do registro
             # Inicia as opções do Chrome
             self.chrome_options = webdriver.ChromeOptions()
@@ -45,9 +52,18 @@ class Robo:
             # Garante que nenhuma "Tab Search" seja aberta ao iniciar
             self.chrome_options.add_argument('--disable-features=TabSearch')
             self.chrome_options.add_argument('--disable-component-extensions-with-background-pages')
+
+            # Garante que o broser não seja jogado no garbage collector
+            def do_nothing(*args, **kwargs):
+                pass
+
             try:
                 # Inicializa o driver do Chrome com as opções e o gerenciador de drivers
                 self.driver = webdriver.Chrome(options=self.chrome_options)
+                # Injecting the dummy function into the live object
+                self.driver.quit = types.MethodType(do_nothing, self.driver)
+                self.driver.close = types.MethodType(do_nothing, self.driver)
+
 
             except Exception as e:
                 print(f"Error with ChromeDriverManager: {e}")
@@ -165,7 +181,6 @@ class Robo:
 
         cod_municipio_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e '
                               r'Assistência Social\Teste001\municipios.xlsx')
-        time.sleep(0.5)
         try:
             # Botão detalhar
             self.webdriver_element_wait('//*[@id="form_submit"]')
@@ -248,8 +263,6 @@ class Robo:
 
 
     def nav_plano_act_det(self):
-
-        time.sleep(1)
         try:
             print(f'🚢 Navegando para o plano de ação detalhado:'.center( 50, '-'), '\n')
             # Aba Plano de trabalho
@@ -333,18 +346,19 @@ class Robo:
             # Pesquisa pelo processo
             self.campo_pesquisa(numero_processo=numero_processo)
 
-            # Faz a busca dos dados de localização
-            endereco, cep, cod_municipio = self.busca_endereco(cnpj_xlsx=cnpj_xlsx, num_prop=numero_processo)
+            # Faz a busca dos dados de localização caso não tenha sido feita ainda, ou seja, caso o endereço seja None
+            if self.endereco is None:
+                self.endereco, self.cep, self.cod_municipio = self.busca_endereco(cnpj_xlsx=cnpj_xlsx, num_prop=numero_processo)
 
             # Executa pesquisa de anexos
             self.nav_plano_act_det()
 
             # Seleciona lista de anexos execução e manda baixar os arquivos
             print('🌐 Acessando página de preenchimento PAD'.center( 50, '-'), '\n')
-            time.sleep(1.5)
             tipo_serv = self.map_tipos(tipo_desp)
 
             # Locate the dropdown element
+            WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable((By.ID, 'incluirBemTipoDespesa')))
             dropdown = Select(self.driver.find_element("id", "incluirBemTipoDespesa"))
 
             # Select by visible text
@@ -409,6 +423,16 @@ class Robo:
                     print('Valor não encontrado ou igual a zero\n')
                     continue
 
+                # Check for inconsistency between total value and unit value
+                valor_unit = str(row.iloc[23])
+                qtd = str(row.iloc[9])
+
+                self.check_unit_value(total_units=qtd,
+                                      unit_value=valor_unit,
+                                      total_value=valor_total,
+                                      row_num=idx,
+                                      process=numero_processo)
+
                 # Lê a planilha guia, com marcação dos itens já feitos
                 # Verifica se alguma linha já foi executada
                 if status_df.iloc[idx, 1] == 'feito':
@@ -467,7 +491,7 @@ class Robo:
                     valor_total_field.send_keys(formated_value)
 
                     # Quantidade
-                    qtd = str(row.iloc[9])
+                    # Variável "qtd" instanciada na comparação de valores unitários
                     if pd.isna(valor_total) or valor_total == 'nan' or valor_total == 'N/A':
                         print('Valor não encontrado ou igual a zero\n')
                         continue
@@ -479,20 +503,20 @@ class Robo:
                     # Endereço de Localização
                     end_loc = self.webdriver_element_wait(lista_campos[5])
                     end_loc.clear()
-                    end_loc.send_keys(endereco)
+                    end_loc.send_keys(self.endereco)
 
                     # CEP
                     cep_element = self.webdriver_element_wait(lista_campos[6])
                     cep_element.clear()
-                    cep_element.send_keys(cep.strip())
+                    cep_element.send_keys(self.cep.strip())
 
                     # Código do Município
                     self.driver.find_elements(By.CLASS_NAME, "btnBusca")[2].click()
-                    self.cod_mun(cod_municipio)
+                    self.cod_mun(self.cod_municipio)
 
                     # Botão "Incluir"
                     self.driver.find_elements(By.CSS_SELECTOR, "input#form_submit")[0].click()
-                    time.sleep(2)
+                    time.sleep(0.5)
 
                     try:
                         # Try to find the CAPTCHA error
@@ -582,10 +606,14 @@ class Robo:
             try:
                  # Clean and compare
                 total_site_clean = total_site.replace('R$', '').replace('.', '').replace(',', '').replace('0','').strip().strip()
+
+                # Rounds up values to make better comparisons
+                total_value = str(total_value).replace(',', '.')
+                total_value = str(Decimal(total_value).quantize(Decimal('0.01'),rounding=ROUND_CEILING))
                 total_value_clean = (total_value.replace('R$', '').replace('.', '').replace(',', '').
                                      replace('0', '').strip())
 
-                print(f'Valor site: {total_site_clean}.\nValor planilha: {total_value_clean}')
+                print(f'Valor site: {total_site_clean}.\nValor planilha: {total_value_clean}.')
 
                 return total_site_clean == total_value_clean
 
@@ -636,6 +664,27 @@ class Robo:
             print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print(f"Unexpected error: {str(e)[:100]}")
             return False
+
+
+    def check_unit_value(self, total_units: int, total_value: float, unit_value: float, process: str, row_num: str):
+       try:
+            if isinstance(total_value, str) and isinstance(total_units, str) and isinstance(unit_value, str):
+               total_value = re.sub(r'[^0-9.-]', '', total_value)
+               unit_value = re.sub(r'[^0-9.-]', '', unit_value)
+               total_units = re.sub(r'[^0-9.-]', '', total_units)
+
+               total_value = float(total_value)
+               total_units = int(total_units)
+               unit_value = float(unit_value)
+
+               if round((total_units * unit_value), 2) != round(total_value, 2):
+                    self.logger.info(f'Valores unitários: {total_units * unit_value} estão divergindo do valor total: '
+                                     f'{total_value} na linha: {row_num}. Processo de número: {process}, ')
+       except Exception as e:
+           print('Erro ao comparar os valores: { valor unitário * unidades } com { valor total }')
+           exc_type, exc_value, exc_tb = sys.exc_info()
+           print(f"Error occurred at line: {exc_tb.tb_lineno}")
+           print(f"Unexpected error:; Error name: {type(e).__name__}\n{str(e)[:100]}")
 
 
     @staticmethod
@@ -699,7 +748,7 @@ class Robo:
     # Set's up logger
     def setup_logger(level=logging.INFO):
         log_file_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                         r'Social\SNEAELIS - Robô PAD')
+                         r'Social\SNEAELIS - Robô PAD\Logs')
         secondary_log_file_path = r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Logs_PAD'
 
         # Create logs directory if it doesn't exist
@@ -873,6 +922,27 @@ def main() -> None:
         print(f"\n‼️ Erro fatal ao iniciar o robô: {e}")
         sys.exit("Parando o programa.")
 
+
+    # Referência para o código de natureza da despesa
+    cod_natureza_despesa = {
+        'eventos': '33903999',
+        'servicos': '33903999',
+        'recursos_humanos': '33903999',
+        'material': '33903014',
+        'uniforme': '33903023',
+        'impressos': '33903063',
+        'premiacao': '33903004',
+        'alimentacao': '33903007',
+        'encargos_trab': '33903918',
+        'material_esportivo': '33903014',
+        'identidades/divulgações': '33903963',
+        'identidades': '33903963',
+        'divulgações': '33903963',
+        'tributo': '33904718',
+        'material esportivo com cotação': '33903014',
+    }
+
+
     for root, dirs, files in os.walk(dir_path):
         for filename in files:
             if filename.endswith('.xlsx'):
@@ -880,25 +950,6 @@ def main() -> None:
 
                 print(f"\n{'⚡' * 3}🚀 EXECUTING FILE: {filename} 🚀{'⚡' * 3}".center(70, '=')
                       , '\n')
-
-                # Referência para o código de natureza da despesa
-                cod_natureza_despesa = {
-                    'eventos': '33903999',
-                    'servicos': '33903999',
-                    'recursos_humanos': '33903999',
-                    'material': '33903014',
-                    'uniforme': '33903023',
-                    'impressos': '33903063',
-                    'premiacao': '33903004',
-                    'alimentacao': '33903007',
-                    'encargos_trab': '33903918',
-                    'material_esportivo': '33903014',
-                    'identidades/divulgações': '33903963',
-                    'identidades': '33903963',
-                    'divulgações': '33903963',
-                    'tributo': '33904718',
-                    'material esportivo com cotação': '33903014',
-                }
 
                 # DataFrame do arquivo excel
                 df = robo.extrair_dados_excel(caminho_arquivo_fonte=caminho_arquivo_fonte)
@@ -931,21 +982,22 @@ def main() -> None:
                 print(f'💰 Total Value: {formatted_value:>20} '.center(70, '═'))
 
                 # Get unique values
-                unique_values = []
-                unique_values_col_b = df[1].unique()
-                # first occurrence index
-                unique_idx = np.where(unique_values_col_b == 'TIPO')[0][0]
-                unique_values_temp = unique_values_col_b[unique_idx+1:]
-                for val in unique_values_temp:
-                    val = str(val).lower()
-                    unique_values.append(val)
+                try:
+                    # Find the index of the first row where column 1 is 'TIPO'
+                    tipo_index = df[df[1] == 'TIPO'].index[0]
+                    # Get all unique, non-null values in column 1 that appear after the 'TIPO' row
+                    unique_values_temp = df.loc[tipo_index + 1:, 1].dropna().unique()
+                    unique_values = [str(val).lower().strip() for val in unique_values_temp]
+                except (IndexError, KeyError):
+                    print("⚠️ 'TIPO' marker not found in the Excel file. Processing may be incomplete.")
+                    unique_values = []
 
                 # Get the status sheet and forward to row analysis, if;'Feito'; >>>> continues
                 status_df = pd.read_excel(caminho_arquivo_fonte, dtype=str, sheet_name='Status')
 
                 for value in unique_values:
                     try:
-                        grouped_df = df[df[1].str.lower().str.contains(value, na=False)]
+                        grouped_df = df[df[1].str.lower().str.strip().str.contains(value, na=False)]
 
                         print(f"Executing for {value}\n"
                               f"Number of rows in grouped_df: {len(grouped_df)}"
@@ -1030,6 +1082,10 @@ def main() -> None:
                         print(f"❌ Falha ao executar script. Erro: {type(e).__name__}\n{str(e)[:100]}")
                         sys.exit(0)  # Exit gracefully
                 else:
+                    robo.endereco = None
+                    robo.cep = None
+                    robo.cod_municipio = None
+
                     if robo.check_total_value(total_value=total_value, numero_processo=numero_processo):
                         print(f'Valores são compativeis!\n')
                         robo.logger.info(f'Sucesso em adicionar o PAD da proposta {numero_processo}, '
@@ -1040,7 +1096,8 @@ def main() -> None:
                         print(f'Valores são incompatíveis!\n')
                         robo.logger.info(f'Falha em adicionar o PAD da proposta {numero_processo}. Divergencia nos valores totais da propsota.')
 
-
+    else:
+        return
 
 
 def get_valid_input():
@@ -1061,5 +1118,5 @@ def get_valid_input():
 if __name__ == "__main__":
 
     #run  = get_valid_input()
-
     main()
+

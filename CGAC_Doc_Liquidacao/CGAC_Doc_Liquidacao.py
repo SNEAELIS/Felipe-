@@ -538,7 +538,6 @@ class Robo:
                 botao_download = WebDriverWait(linha, 3).until(
                     EC.element_to_be_clickable((By.CLASS_NAME, 'buttonLink')))
                 if botao_download:
-                    continue
                     botao_download.click()
             except:
                 print('❌ Botã de download não encontrado.')

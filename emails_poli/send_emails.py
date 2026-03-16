@@ -1,10 +1,14 @@
+import random
 import os
 import sys
+import time
 
 import win32com.client as win32
 from fuzzywuzzy import fuzz, process
 import pandas as pd
 from pandas import ExcelWriter
+
+
 
 
 # Send email to a list that is on excel, email is sent changing the sender and also has text and attachemnt
@@ -17,6 +21,9 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
         attachment_path (string): Attachment file paths (optional)
         sender (str): Email address to send from (optional)
     """
+
+    sent_mails = []
+
     def read_excel_data():
         """
         Read email data from Excel file
@@ -52,7 +59,7 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
             for i in correct_email_xlsx:
                 final_email_set.add(i)
 
-            print(f'{len(correct_email_xlsx)} and {len(final_email_set)}')
+            print(f'Final number of unique emails found {len(final_email_set)}')
 
             return final_email_set
 
@@ -61,17 +68,20 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
             return []
 
 
-    def mark_as_done(index, file_path):
+    def mark_as_done(proponente, file_path):
         """Safely mark row as done and save to Excel"""
         try:
-            status_df = pd.read_excel(excel_path, dtype=str, sheet_name='Status')
+            status_df = pd.read_excel(file_path, dtype=str)
 
-            index = str(index)
+            if 'Status' not in status_df.columns:
+                status_df['Status'] = ''
 
-            status_df.loc[status_df['Index'] == index, 'Status'] = 'feito'
+            proponente = str(proponente)
+
+            status_df.loc[status_df['Proponente'] == proponente, 'Status'] = 'feito'
 
             # Verify the modification
-            modified_value = status_df.loc[status_df['Index'] == index, 'Status'].values
+            modified_value = status_df.loc[status_df['Proponente'] == proponente, 'Status'].values
             if len(modified_value) > 0 and modified_value[0] == 'feito':
                 print("✅ DataFrame modification successful")
             else:
@@ -79,7 +89,7 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
 
             with ExcelWriter(file_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
                 # Save to Excel
-                status_df.to_excel(writer, index=False, sheet_name='Status')
+                status_df.to_excel(writer, index=False)
 
             return True
 
@@ -107,8 +117,18 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
                     e_mail.Attachments.Add(attachment)
                 else:
                     print(f"⚠️ Attachment not found: {attachment}")
-            e_mail.Send()
-            return print(f"📧📤 Email sent to: {email}")
+
+            # Move from Drafts to Outbox and send
+            try:
+                # This sometimes bypasses security
+                e_mail.Send()
+                time.sleep(1.5)
+                return print(f"📧📤 Email sent to: {email}")
+
+            except:
+                print(sent_mails)
+                sys.exit()
+
         except Exception as e:
             print(f"❌ Failed to send email: \n{e}")
             return False
@@ -119,26 +139,30 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
         Customize this function to generate your email content
         based on the Excel data for each recipient
         """
-        set_subject = (f"Canal Oficial da SNEAELIS no WhatsApp - Link de Acesso")
+        set_subject = (f"Atualização no e-SNEAELIS")
 
         set_html_body = f"""
-<p>Prezados(as),</p>
+<p>📢✨ Início das etapas das propostas 2026</p>
 
-<p>A Secretaria Nacional de Esporte Amador, Educação, Lazer e Inclusão Social (SNEAELIS) está disponibilizando um canal oficial no WhatsApp, criado para o envio de avisos e comunicados importantes, de forma mais ágil e organizada.</p>
+<p>Chegou o momento de dar início às etapas de preenchimento dos projetos e organização da documentação das propostas para o exercício de 2026. 📑🚀</p>
 
-<p>Para acessar o grupo, utilize o link abaixo:</p>
+<p>As entidades que possuem Convênio ou Termo de Fomento para 2026 já podem acessar o e-SNEAELIS e iniciar o preenchimento da proposta no sistema. 💻📊</p>
+
+<p>👉 Acesso ao sistema:</p>
+<p><a href="https://sneaelis.app.br">👉 https://sneaelis.app.br</a></p>
+
+<p>Este é o primeiro passo para avançarmos juntos na construção e formalização dos projetos. Quanto antes o preenchimento for iniciado, mais ágil será o andamento das próximas etapas. ⏳✔️</p>
+
+<p>✨ É hora de começar!</p>
+
+<p>Com organização e atenção aos detalhes, seguimos avançando para que as propostas evoluam com segurança e eficiência. 💙🚀</p>
+
+<p>📢 Participe do nosso canal oficial no WhatsApp para receber comunicados, atualizações e avisos importantes:</p>
 
 <p><a href="https://chat.whatsapp.com/IVun6wpHIcD8TlKlQeamJu?mode=hqrt1">
 👉 Clique aqui para acessar o canal oficial no WhatsApp</a></p>
-
-<p>O canal é destinado exclusivamente à divulgação de informações oficiais. Em caso de dúvidas ou demandas, os atendimentos seguem pelos meios institucionais habituais.</p>
-
-<p>Agradecemos a atenção e contamos com a participação de todos.</p>
-
-<p>Atenciosamente,<br>
-Secretaria Nacional de Esporte Amador, Educação, Lazer e Inclusão Social – SNEAELIS<br>
-Ministério do Esporte</p>
 """
+
         return set_subject, set_html_body
 
     email_data = read_excel_data()
@@ -147,20 +171,44 @@ Ministério do Esporte</p>
         print("No data found in Excel file")
         return
 
+    df = pd.read_excel(excel_path, dtype=str)
+    if 'Status' not in df.columns:
+        df['Status'] = ''
+    emails_sent = df['Status'].tolist()
+
+
     count = 0
+    BATCH_SIZE = 20  # Pause after this many emails
+    SHORT_SLEEP = (2, 5)  # Random seconds between individual emails
+    LONG_SLEEP = (60, 120)  # Random seconds to wait after a batch
+
     for index, email in enumerate(email_data):
-        if not email:
+        email = 'guilherme.tavares@esporte.gov.br'
+        if index > 0:
+            sys.exit()
+        if not email or email in emails_sent:
             continue
-        #entidade = entidade_data[index]
+
         attachment = attachment_path
         subject, html_body = create_email_content()
 
         # Send email
         send_email_outlook()
-        #mark_as_done(index=index, file_path=excel_path)
-        count += 1
 
-    print(count)
+        count += 1
+        sent_mails.append(email)
+        print(f"Sent {count}: {email}")
+
+        # Short jitter delay to mimic human behavior
+        time.sleep(random.uniform(*SHORT_SLEEP))
+
+        # Batch delay to let the server breathe
+        if count % BATCH_SIZE == 0:
+            wait_time = random.randint(*LONG_SLEEP)
+            print(f"Batch limit reached. Cooling down for {wait_time} seconds...")
+            time.sleep(wait_time)
+
+    print(f"Finished! Total sent: {count}")
 
 
 def correct_email_domain(email, domain_threshold=80, correct_domains=None):
@@ -229,9 +277,9 @@ def correct_email_domain(email, domain_threshold=80, correct_domains=None):
 
 
 def send_emails_from_excel_main():
-    xlsx = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\propostas_sneaelis.xlsx"
+    xlsx = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\emails_poli\Emails.xlsx"
     #attach = (r'')
-    sender = 'assessoria.sneaelis@esporte.gov.br'
+    sender = 'felipe.rsouza@esporte.gov.br'#'assessoria.sneaelis@esporte.gov.br'
 
     send_emails_from_excel(
         excel_path=xlsx,
@@ -242,4 +290,3 @@ def send_emails_from_excel_main():
 
 if __name__ == "__main__":
     send_emails_from_excel_main()
-    #Try to commit

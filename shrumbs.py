@@ -1,46 +1,41 @@
-import os.path
-import sys
-import re
-
 from pandas import ExcelWriter
-import pandas as pd
-
-from colorama import Fore
-
+import pdfplumber
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 from playwright.sync_api import sync_playwright
-from PIL import Image
-import io
-import pdfplumber
 import base64
 from PyPDF2 import PdfReader, PdfWriter
-from selenium.webdriver.chrome.options import Options
-from selenium import webdriver
+import pytesseract
 from selenium.common import WebDriverException, TimeoutException, NoSuchElementException
-from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import StaleElementReferenceException
 from webdriver_manager.chrome import ChromeDriverManager
 from datetime import datetime
 from selenium.webdriver import ActionChains
 from colorama import Fore, Style
-from pathlib import Path
 import time
-import os
-import sys
-import shutil
 import json
-import traceback
 import fitz  # PyMuPDF
 import pyautogui
 import re
 import zipfile
-import pandas as pd
 from openpyxl import load_workbook
 from copy import copy
+from PIL import Image, ImageEnhance, ImageFilter
+import shutil
+import sys
+import pandas as pd
+import io
+import os
+
+r'''
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\chrome_profile" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9224 --user-data-dir="%USERPROFILE%\chrome_profile_2" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9226 --user-data-dir="%USERPROFILE%\chrome_profile_3" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
+'''
+
+
+
+pytesseract.pytesseract.tesseract_cmd = r"C:\Users\felipe.rsouza\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"
 
 
 
@@ -541,22 +536,20 @@ if __name__ == "__main__":
 
         main()
 
-
+    # Check if directory is empty
     elif func == 8:
-        root_dir = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                    r'Social\Automações SNEAELIS\Analise_Custos_Exec_Print')
-        no_pdf_folder = []  # Use a list to store the folder paths
+        root_dir = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Automações SNEAELIS\CGAC_2024')
+        empty_dris = []  # Use a list to store the folder paths
 
         for root, dirs, files in os.walk(root_dir):
-            # Check if there are any files with a .pdf extension in the current directory
-            has_pdf = any(file.lower().endswith('.pdf') for file in files)
-            # If no PDF files are found, add the directory name to the list
-            if not has_pdf:
-                no_pdf_folder.append(os.path.basename(root))
-
-        print("Subdirectories without PDF files:")
-        for folder in no_pdf_folder:
-            print(folder)
+            for dir in dirs:
+                try:
+                    with os.scandir(os.path.join(root, dir)) as entries:
+                        if next(entries, None) is None:
+                            empty_dris.append(os.path.basename(dir).split('_')[0])
+                except:
+                    print(f"Warning: Could not access directory.")
+        print(f'Number of empty dirs: {len(set(empty_dris))}.\nName of the empty dirs: {set(empty_dris)}')
 
 
     # Fake long funtion
@@ -591,7 +584,7 @@ if __name__ == "__main__":
 
             def consulta_proposta(self):
                 """Navigates through the system tabs to the process search page."""
-                time.sleep(3)
+                time.sleep(1.5)
                 try:
                     self.page.locator('xpath=//*[@id="logo"]/a').click(timeout=800)
                 except PlaywrightTimeoutError:
@@ -609,9 +602,6 @@ if __name__ == "__main__":
                     sys.exit(1)
 
             def campo_pesquisa(self, numero_processo):
-
-                time.sleep(3)
-
                 try:
                     campo_pesquisa_locator = self.page.locator('xpath=//*[@id="consultarNumeroProposta"]')
                     campo_pesquisa_locator.fill(numero_processo)
@@ -629,7 +619,7 @@ if __name__ == "__main__":
                     print(f' Failed to insert process number in the search field. Error: {type(e).__name__}')
 
             def busca_endereco(self):
-                time.sleep(4)
+                time.sleep(1)
 
                 self.page.wait_for_timeout(500)
                 try:
@@ -710,7 +700,7 @@ if __name__ == "__main__":
 
             def mark_as_done(self, df, numero_processo, phone, email):
                 """Safely mark row as done in the DataFrame"""
-                time.sleep(3)
+                time.sleep(1)
                 try:
                     # Find the row index where the process number matches
                     mask = df.iloc[:, 4] == numero_processo
@@ -735,7 +725,7 @@ if __name__ == "__main__":
                     return False
 
             def loop_de_pesquisa(self, df, numero_processo: str):
-                time.sleep(3)
+                time.sleep(1)
 
                 print(f'🔍 Starting data extraction loop'.center(50, '-'), '\n')
 
@@ -767,7 +757,7 @@ if __name__ == "__main__":
             # --- Fixed Save Function ---
             @staticmethod
             def save_to_excel(df, caminho_arquivo_fonte, sheet_name='Sheet1'):
-                time.sleep(3)
+                time.sleep(1.5)
 
                 try:
                     # Create backup of original file
@@ -798,8 +788,6 @@ if __name__ == "__main__":
 
             @staticmethod
             def extrair_dados_excel(caminho_arquivo_fonte):
-                time.sleep(3)
-
                 try:
                     complete_data_frame = pd.read_excel(caminho_arquivo_fonte, dtype=str, sheet_name=None)
                     sheet_names_list = list(complete_data_frame.keys())
@@ -818,7 +806,7 @@ if __name__ == "__main__":
 
             @staticmethod
             def fix_prop_num(numero_proposta):
-                time.sleep(3)
+                time.sleep(0.75)
 
                 if pd.isna(numero_proposta):
                     return False
@@ -848,39 +836,35 @@ if __name__ == "__main__":
                 sys.exit("Stopping the program.")
 
             # Load DataFrame
-            df = robo.extrair_dados_excel(caminho_arquivo_fonte=dir_path)
-            if df is None:
+            df_total = robo.extrair_dados_excel(caminho_arquivo_fonte=dir_path)
+            if df_total is None:
                 print("❌ Failed to load Excel file. Exiting.")
                 return
 
             # Make sure the required columns exist
-            if 'Telefone' not in df.columns:
-                df['Telefone'] = ''
-            if 'Email' not in df.columns:
-                df['Email'] = ''
+            if 'Telefone' not in df_total.columns:
+                df_total['Telefone'] = ''
+            if 'Email' not in df_total.columns:
+                df_total['Email'] = ''
+
+            mask = (df_total['Telefone'].isna() | (df_total['Telefone'] == '')) & (df_total['Email'].isna() | (df_total['Email'] == ''))
+
+            df = df_total[mask]
+
+            skipped_count = len(df_total) - len(df)
+            print(f"⏭️ Skipping {skipped_count} rows - already processed (both phone and email exist)")
 
             robo.consulta_proposta()
 
             successful_updates = 0
-            skipped_count = 0
 
             for idx, row in df.iterrows():
-                time.sleep(3)
+                time.sleep(1.5)
 
                 numero_processo_temp = row.iloc[4]
                 numero_processo = robo.fix_prop_num(numero_processo_temp)
 
                 if not numero_processo:
-                    continue
-
-                # Get current phone and email values
-                current_phone = str(row['Telefone']) if pd.notna(row['Telefone']) else ""
-                current_email = str(row['Email']) if pd.notna(row['Email']) else ""
-
-                # Skip if both phone and email already have data
-                if current_phone or current_email:
-                    print(f"⏭️  Skipping {numero_processo} - already processed (both phone and email exist)")
-                    skipped_count += 1
                     continue
 
                 print(f"\n{'⚡' * 3}🚀 EXECUTING PROPOSAL: {numero_processo} 🚀{'⚡' * 3}".center(70, '='), '\n')
@@ -919,7 +903,6 @@ if __name__ == "__main__":
 
         if __name__ == "__main__":
             main()
-
 
 
     # busca dados de quantos arquivos são esperados em cada proposta
@@ -1887,126 +1870,43 @@ if __name__ == "__main__":
                             dpi=120,
                             quality=80)
 
-
+    # PDF slicer
     elif func == 15:
-        from dash import dcc, html, Input, Output
+        from  PyPDF2 import PdfReader, PdfWriter
 
-        # Sample data: Brazilian cities with lat/lon and population
-        df = pd.DataFrame({
-            'city': ['São Paulo', 'Rio de Janeiro', 'Brasília', 'Salvador', 'Fortaleza'],
-            'lat': [-23.5505, -22.9068, -15.8267, -12.9714, -3.7319],
-            'lon': [-46.6333, -43.1729, -47.9218, -38.5014, -38.5267],
-            'population': [12325232, 6747815, 3055149, 2932920, 2686612]
-        })
+        reader = PdfReader(r"C:\Users\felipe.rsouza\Downloads\02. RG_E_RESIDENCIA.pdf")
 
-        # Initialize Dash app
-        app = dash.Dash(__name__)
+        pages_len = len(reader.pages)
 
-        # Layout: PowerBI-like grid
-        app.layout = html.Div([
-            # Header
-            html.H1("Brazil Interactive Map Dashboard",
-                    style={'textAlign': 'center', 'color': '#333', 'marginBottom': 20}),
+        writer = PdfWriter()
 
-            # Main grid: Map + Info panel
-            html.Div([
-                # Map (70% width)
-                html.Div([
-                    dcc.Graph(id='map-graph')
-                ], className='col-md-8', style={'padding': 10}),
+        writer.add_page(reader.pages[pages_len - 1])
 
-                # Side panel (30% width)
-                html.Div([
-                    html.H3("City Details", style={'color': '#666'}),
-                    html.Div(id='selected-info', style={'marginTop': 20, 'fontSize': 14})
-                ], className='col-md-4',
-                    style={'backgroundColor': '#f8f9fa', 'padding': 15, 'borderRadius': 5,
-                           'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'})
-            ], className='row', style={'margin': 0}),
+        with open(r"C:\Users\felipe.rsouza\Documents\rg.pdf", 'wb') as out_file:
+            writer.write(out_file)
 
-            # CSS (inline for simplicity)
-            dcc.Store(id='intermediate-value')
-        ], style={'fontFamily': 'Segoe UI, sans-serif', 'backgroundColor': '#fff', 'padding': 20})
+            print(f"Last page extracted and saved to {out_file}")
+        print(f"Total pages in original: {pages_len}")
 
-
-        # Callback for interactivity: Click map marker to update side panel
-        @app.callback(
-            [Output('selected-info', 'children'),
-             Output('intermediate-value', 'data')],
-            [Input('map-graph', 'clickData')]
-        )
-        def update_info(clickData):
-            if clickData:
-                point = clickData['points'][0]
-                city = point['customdata'][0]  # City name
-                pop = point['customdata'][1]  # Population
-                return f"Selected: {city}\nPopulation: {pop:,}", clickData
-            return "Click a city marker on the map!", None
-
-
-        # Callback to render the map
-        @app.callback(
-            Output('map-graph', 'figure'),
-            [Input('intermediate-value', 'data')]
-        )
-        def update_map(data):
-            # Create scattermapbox focused on Brazil
-            fig = px.scatter_mapbox(df,
-                                    lat='lat', lon='lon',
-                                    size='population',  # Bubble size like PowerBI
-                                    color='population',  # Color by value
-                                    hover_name='city',
-                                    size_max=30,
-                                    mapbox_style='open-street-map',  # Free map style
-                                    zoom=3.5,  # Adjusted for Brazil
-                                    center={'lat': -14.2350, 'lon': -51.9253},  # Brazil's center
-                                    custom_data=['city', 'population'])  # For clicks
-
-            # Restrict map to Brazil's bounding box (excludes other countries)
-            fig.update_layout(
-                height=600,
-                margin={'r': 0, 't': 0, 'l': 0, 'b': 0},
-                showlegend=False,
-                mapbox={
-                    'style': 'open-street-map',
-                    'center': {'lat': -14.2350, 'lon': -51.9253},
-                    'zoom': 3.5,
-                    'bounds': {
-                        'west': -73.9872,  # Brazil's western edge
-                        'east': -32.3923,  # Brazil's eastern edge
-                        'north': 5.2719,  # Brazil's northern edge
-                        'south': -33.7507  # Brazil's southern edge
-                    }
-                },
-                clickmode='event+select'
-            )
-
-            return fig
-
-
-        app.run(debug=True, port=8050)
-
-
+    # Checks folder names with excel column
     elif func == 17:
-        def drop_empty_rows_and_save(file_path):
-            """
-            Reads an Excel file, drops completely empty rows, and saves back to the same file.
+        root_path = r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Automações SNEAELIS\CGAC_2024'
+        xlsx_path = r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Automações SNEAELIS\CGAC_2024\CGAC_2024_dataSource_filtered.xlsx'
 
-            Args:
-                file_path (str): Path to the Excel file (.xlsx or .xls)
-            """
-            # Read the Excel file
-            df = pd.read_excel(file_path)
+        df = pd.read_excel(xlsx_path, dtype=str)
 
-            # Drop rows where ALL columns are empty
-            df_cleaned = df.dropna(how='all')
+        folder_names = [
+            name.split('_')[0] for name in os.listdir(root_path)
+            if os.path.isdir(os.path.join(root_path, name))
+        ]
 
-            # Save back to the same file
-            df_cleaned.to_excel(file_path, index=False)
+        # Convert DataFrame column to a set for fast lookup
+        df_values = set(df['Nº CONVÊNIO'].astype(str))
 
-            print(f"Removed {len(df) - len(df_cleaned)} empty rows. File saved to {file_path}")
+        # Compare and find matches
+        matches = [folder for folder in folder_names if folder in df_values]
 
-        drop_empty_rows_and_save(str(input("Type in the complete path for desired file: ")))
+        print(matches)
 
     # Text cleaner for monitor.py
     elif func == 18:
@@ -2135,6 +2035,7 @@ if __name__ == "__main__":
         elapsed_str = str(elapsed).split('.')[0]
         print(f"Save time: {elapsed_str}")
 
+    # Test selectors
     elif func == 20:
         from selenium import webdriver
         from selenium.webdriver.chrome.options import Options
@@ -2342,3 +2243,534 @@ if __name__ == "__main__":
 
         if __name__ == "__main__":
             main()
+
+    # capture_position
+    elif func == 21:
+        def capture_position(element_name="element"):
+            """Capture position with countdown"""
+            print(f"Get ready to position mouse on {element_name}...")
+            for i in range(7, 0, -1):
+                print(f"Capturing in {i} seconds...")
+                time.sleep(1)
+
+            x, y = pyautogui.position()
+            print(f"✓ {element_name}: X={x}, Y={y}")
+            return x, y
+
+
+        # Capture multiple elements
+        login_button = capture_position("Login Button")
+        #search_box = capture_position("Search Box")
+        #submit_btn = capture_position("Submit Button")
+
+
+    elif func == 22:
+        def clear_dir(dir_path):
+            try:
+                files = [f for f in os.listdir(dir_path) if os.path.isfile(os.path.join(dir_path, f))]
+
+                if not files:
+                    print(f"  No files found in: {dir_path}")
+                    return 0
+
+                print(f"\n  Files to delete in '{os.path.basename(dir_path)}':")
+
+                for file in files[:10]:
+                    print(f"    - {file}")
+                if len(files) > 10:
+                    print(f"    ... and {len(files) - 10} more files")
+
+                response = input(f"\n  Delete {len(files)} files from this directory? (y/n): ").strip().lower()
+
+                if response == 'y':
+                    del_count = 0
+                    for file in files:
+                        file_path = os.path.join(dir_path, file)
+                        try:
+                            os.remove(file_path)
+                            del_count += 1
+                        except:
+                            print(f"    Error deleting {file}")
+
+                    print(f"  ✓ Deleted {del_count} files from: {dir_path}")
+                    return del_count
+
+                else:
+                    print(f"  ✗ Skipped: {dir_path}")
+                    return 0
+
+            except Exception as e:
+                print(f"  Error accessing directory {dir_path}: {e}")
+                return 0
+
+
+        def find_and_clear_dirs(main_dir, tgt_name):
+            print(f"Searching for directories named '{tgt_name}' in:")
+            print(f"  {main_dir}")
+            print("-" * 80)
+
+            dir_to_tgt = [os.path.join(root, tgt_name) for root, dirs, files in os.walk(main_dir) if tgt_name in dirs]
+
+            if not dir_to_tgt:
+                print(f"No directories named '{tgt_name}' found!")
+                return
+
+            print(f"\nFound {len(dir_to_tgt)} directories named '{tgt_name}':")
+
+            for i, dir_path in enumerate(dir_to_tgt, 1):
+                parent = os.path.dirname(dir_path)
+                grandparent = os.path.dirname(parent)
+
+                print(f"\n{i}. Directory: {dir_path}")
+                print(f"   Located in: {os.path.basename(parent)}/")
+
+            response = input(f"\nProceed with cleaning {len(dir_to_tgt)} directories? (y/n): ").strip().lower()
+
+            if response != 'y':
+                print("Operation cancelled.")
+                return
+
+            total_deleted = 0
+            processed_dirs = 0
+
+            for dir_path in dir_to_tgt:
+                print(f"\n{'=' * 60}")
+                print(f"Processing directory {processed_dirs + 1} of {len(dir_to_tgt)}:")
+                print(f"Path: {dir_path}")
+
+                deleted = clear_dir(dir_path=dir_path)
+                total_deleted += 1
+                processed_dirs += 1
+
+            # Summary
+            print("\n" + "=" * 80)
+            print("SUMMARY:")
+            print(f"  Directories processed: {processed_dirs}")
+            print(f"  Total files deleted: {total_deleted}")
+            print("=" * 80)
+
+        # Your main directory path
+        main_directory = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
+                          r"Social\SNEAELIS - Propostas 1\Termo de Fomento")
+        target_dir_name = "Consultas Celebração"
+
+        print("=" * 80)
+        print("DIRECTORY CLEANUP TOOL")
+        print("=" * 80)
+
+        find_and_clear_dirs(main_dir=main_directory, tgt_name=target_dir_name)
+
+
+    # copy sharepoint xlsx file to desire directory
+    elif func == 23:
+        def manual_sync_workflow(destiny_dir: str):
+            # Option C: Browser download folder
+            download_folder = os.path.expanduser("~/Downloads/")
+            # Find the latest Excel file
+            excel_files = [f for f in os.listdir(download_folder) if f.endswith('.xlsx')]
+
+            if excel_files:
+                latest_file = max(excel_files, key=lambda x: os.path.getmtime(os.path.join(download_folder, x)))
+                shutil.move(os.path.join(download_folder, latest_file), destiny_dir)
+
+
+        dir_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
+                    r'Social\Teste001\fabi_DFP\Consultas.xlsx')
+
+        manual_sync_workflow(destiny_dir=dir_path)
+
+    # better fake function
+    elif func == 24:
+        class BreakInnerLoop(Exception):
+            pass
+
+
+        class PWRobo:
+            def __init__(self, cdp_url: str = "http://localhost:9222"):
+                self.playwright = sync_playwright().start()
+                self.browser = self.playwright.chromium.connect_over_cdp(cdp_url)
+                self.context = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
+                self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
+
+                # Enable resource blocking for faster performance
+                # self.block_rss()
+
+                print(f"✅ Connected to existing Chrome instance via Playwright. Connected to page: {self.page.url}")
+
+            def block_rss(self):
+                """Block images, stylesheets, and fonts to make browsing faster"""
+
+                def route_handler(route, request):
+                    if request.resource_type in ["image", "stylesheet", "font"]:
+                        route.abort()
+                    else:
+                        route.continue_()
+
+                self.page.route('**/*', route_handler)
+                print("✅ Resource blocking enabled for faster performance")
+
+            def consulta_proposta(self):
+                """Navigates through the system tabs to the process search page."""
+                try:
+                    self.page.locator('xpath=//*[@id="logo"]/a').click(timeout=800)
+                except PlaywrightTimeoutError:
+                    print('Already on the initial page of transferegov discricionárias.')
+                except PlaywrightError as e:
+                    print(Fore.RED + f'🔄❌ Failed to reset.\nError: {type(e).__name__}\n{str(e)[:100]}')
+
+                xpaths = ['xpath=//*[@id="menuPrincipal"]/div[1]/div[3]',
+                          'xpath=//*[@id="contentMenu"]/div[1]/ul/li[2]/a']
+                try:
+                    for xpath in xpaths:
+                        self.page.locator(xpath).click(timeout=10000)
+                except PlaywrightError as e:
+                    print(Fore.RED + f'🔴📄 Instrument unavailable. \nError: {e}')
+                    sys.exit(1)
+
+            def campo_pesquisa(self, numero_processo):
+                try:
+                    campo_pesquisa_locator = self.page.locator('xpath=//*[@id="consultarNumeroProposta"]')
+                    campo_pesquisa_locator.fill(numero_processo)
+                    campo_pesquisa_locator.press('Enter')
+                    try:
+                        acessa_item_locator = self.page.locator('xpath=//*[@id="tbodyrow"]/tr/td[1]/div/a')
+                        acessa_item_locator.click(timeout=8000)
+                    except PlaywrightTimeoutError:
+                        print(f' Process number: {numero_processo}, not found.')
+                        raise BreakInnerLoop
+                    except PlaywrightError as e:
+                        print(f' Process number: {numero_processo}, not found. Error: {type(e).__name__}')
+                        raise BreakInnerLoop
+                except PlaywrightError as e:
+                    print(f' Failed to insert process number in the search field. Error: {type(e).__name__}')
+
+            def busca_endereco(self):
+                time.sleep(1)
+
+                self.page.wait_for_timeout(500)
+                try:
+                    print(f'🔍 Starting data search'.center(50, '-'), '\n')
+
+                    # Click the detail button
+                    self.page.locator('input#form_submit[value="Detalhar"]').click()
+
+                    # Wait for the page to load
+                    self.page.wait_for_timeout(2000)
+
+                    # Initialize with empty values
+                    phone = ""
+                    email = ""
+
+                    # Check if elements exist before trying to extract text
+                    phone_locator = self.page.locator('#txtTelefone')
+                    email_locator = self.page.locator('#txtEmail')
+
+                    phone_exists = phone_locator.count() > 0
+                    email_exists = email_locator.count() > 0
+
+                    print(f"🔍 Element check - Phone field exists: {phone_exists}, Email field exists: {email_exists}")
+
+                    # Extract phone if available
+                    if phone_exists:
+                        try:
+                            phone_locator.wait_for(timeout=3000)
+                            phone = phone_locator.inner_text(timeout=2000).strip()
+                            print(f"📞 Phone found: '{phone}'")
+                        except PlaywrightTimeoutError:
+                            print("⚠️ Phone element exists but content not loaded or empty")
+                        except Exception as e:
+                            print(f"⚠️ Error extracting phone: {e}")
+                    else:
+                        print("📞 Phone field not found on page")
+
+                    # Extract email if available
+                    if email_exists:
+                        try:
+                            email_locator.wait_for(timeout=3000)
+                            email = email_locator.inner_text(timeout=2000).strip()
+                            print(f"📧 Email found: '{email}'")
+                        except PlaywrightTimeoutError:
+                            print("⚠️ Email element exists but content not loaded or empty")
+                        except Exception as e:
+                            print(f"⚠️ Error extracting email: {e}")
+                    else:
+                        print("📧 Email field not found on page")
+
+                    # Check if we got any data
+                    if not phone and not email:
+                        print("ℹ️ No contact information found on this page")
+                    elif phone and not email:
+                        print("ℹ️ Only phone number found")
+                    elif email and not phone:
+                        print("ℹ️ Only email found")
+                    else:
+                        print("✅ Both phone and email found")
+
+                    # Back button
+                    try:
+                        self.page.locator('xpath=//*[@id="lnkConsultaAnterior"]').click(timeout=8000)
+                    except:
+                        print("⚠️ Could not click back button, navigating manually")
+                        # Alternative navigation if back button fails
+                        self.page.go_back()
+
+                    return phone, email
+
+                except Exception as e:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                    print(f"❌ Unexpected error in busca_endereco: {type(e).__name__} - {str(e)[:100]}")
+                    # Ensure we navigate back even on error
+                    self.page.locator('xpath=//*[@id="lnkConsultaAnterior"]').click(timeout=2000)
+                    return "", ""
+
+            def mark_as_done(self, df, numero_processo, phone, email):
+                """Safely mark row as done in the DataFrame"""
+                time.sleep(1)
+                try:
+                    # Find the row index where the process number matches
+                    mask = df.iloc[:, 4] == numero_processo
+
+                    if mask.any():
+                        # Get the actual index position(s)
+                        idx_positions = df.index[mask]
+                        for idx in idx_positions:
+                            df.at[idx, 'Telefone'] = phone
+                            df.at[idx, 'Email'] = email
+
+                        print(f"✅ Updated process {numero_processo}: Phone={phone}, Email={email}")
+                        return True
+                    else:
+                        print(f"❌ Process number {numero_processo} not found in DataFrame")
+                        return False
+
+                except Exception as err:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                    print(f"❌ Error in mark_as_done:{type(err).__name__}\n{str(err)[:100]}\n")
+                    return False
+
+            def loop_de_pesquisa(self, df, numero_processo: str):
+
+                print(f'🔍 Starting data extraction loop'.center(50, '-'), '\n')
+                xpath = [
+                    '//*[@id="menu_link_330887298_1035188630"]',
+                    '//*[@id="menu_link_330887298_-442619135"]',
+                    '//*[@id="grupo_abas"]/a[3]',
+                    '//*[@id="menu_link_2144784112_100344749"]',
+                    '//*[@id="menu_link_2144784112_2061164"]',
+                    '//*[@id="dados-cauc"]/siconv-historico/div/div[4]/button[2]',
+                    '//*[@id="breadcrumbs"]/a[2]'
+                ]
+                try:
+                    self.campo_pesquisa(numero_processo=numero_processo)
+                    for x in xpath:
+                        time.sleep(2.5)
+                        self.page.locator(x).click(timeout=10000)
+
+                    print(f"{'✨' * 3}📦 DADOS COLETADOS COM SUCESSO 📦{'✨' * 3}")
+                except PlaywrightTimeoutError as t:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f'TIMEOUT {str(t)[:50]}')
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                    self.consulta_proposta()
+                    return False
+                except Exception as erro:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                    print(f'❌ Failed to try to include documents. Error:{type(erro).__name__}\n'
+                          f'{str(erro)[:100]}...')
+                    self.consulta_proposta()
+                    raise BreakInnerLoop
+
+            # --- Fixed Save Function ---
+            @staticmethod
+            def save_to_excel(df, caminho_arquivo_fonte, sheet_name='Sheet1'):
+                time.sleep(1.5)
+
+                try:
+                    # Create backup of original file
+                    backup_path = caminho_arquivo_fonte.replace('.xlsx', '_backup.xlsx')
+                    if os.path.exists(caminho_arquivo_fonte):
+                        import shutil
+                        shutil.copy2(caminho_arquivo_fonte, backup_path)
+                        print(f"✅ Backup created: {backup_path}")
+
+                    # Save using 'w' mode to overwrite the entire file
+                    with ExcelWriter(caminho_arquivo_fonte, engine='openpyxl', mode='w') as writer:
+                        df.to_excel(writer, index=False, sheet_name=sheet_name)
+
+                    print(f"✅ Successfully saved {len(df)} rows to Excel.")
+                    return True
+
+                except PermissionError:
+                    print(f"❌ Permission denied: Please close the Excel file '{caminho_arquivo_fonte}' and try again.")
+                    return False
+                except Exception as erro:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    line_number = exc_tb.tb_lineno
+                    if exc_tb.tb_next:
+                        line_number = exc_tb.tb_next.tb_lineno
+                    print(f"Error occurred at line: {line_number}")
+                    print(f'❌ Failed to save Excel file. Error:{type(erro).__name__}\n{str(erro)}')
+                    return False
+
+            @staticmethod
+            def extrair_dados_excel(caminho_arquivo_fonte):
+                try:
+                    complete_data_frame = pd.read_excel(caminho_arquivo_fonte, dtype=str, sheet_name=None)
+                    sheet_names_list = list(complete_data_frame.keys())
+
+                    print("✅ Sheet Names Found:")
+                    for name in sheet_names_list:
+                        print(f"- {name}")
+
+                    data_frame = complete_data_frame['Sheet1']
+                    print(f"✅ Loaded {len(data_frame)} rows from Excel.")
+                    return data_frame
+
+                except Exception as e:
+                    print(f"🤷‍♂️❌ Error reading the excel file: {os.path.basename(caminho_arquivo_fonte)}.\n"
+                          f"Error name: {type(e).__name__}\nError: {str(e)}")
+
+            @staticmethod
+            def fix_prop_num(numero_proposta):
+                time.sleep(0.75)
+
+                if pd.isna(numero_proposta):
+                    return False
+
+                numero_proposta = str(numero_proposta)
+
+                pattern = r'^\d{5}/\d{4}'
+
+                if '_' in numero_proposta:
+                    numero_proposta_fixed = numero_proposta.replace('_', '/')
+                    return numero_proposta_fixed
+
+                if re.findall(pattern, numero_proposta):
+                    return numero_proposta
+                else:
+                    return False
+
+
+        def main() -> None:
+            dir_path = (
+                r'C:\Users\felipe.rsouza\Documents\fake_func\Convênios - Pendências Celebração (24.11) - Copia.xlsx')
+
+            try:
+                robo = PWRobo()
+            except Exception as e:
+                print(f"\n‼️ Fatal error starting the robot: {e}")
+                sys.exit("Stopping the program.")
+
+            # Load DataFrame
+            df = robo.extrair_dados_excel(caminho_arquivo_fonte=dir_path)
+            if df is None:
+                print("❌ Failed to load Excel file. Exiting.")
+                return
+
+            robo.consulta_proposta()
+
+            for idx, row in df.iterrows():
+                numero_processo_temp = row.iloc[4]
+                numero_processo = robo.fix_prop_num(numero_processo_temp)
+
+                if not numero_processo:
+                    continue
+                print()
+                print(f"{'⚡' * 3}🚀 EXECUTING PROPOSAL: {numero_processo} 🚀{'⚡' * 3}".center(70, '='), '\n')
+                print()
+                print(f"Current progress {idx / len(df):.2%}.")
+
+                try:
+                    robo.loop_de_pesquisa(df=df, numero_processo=numero_processo)
+
+
+                except BreakInnerLoop:
+                    sys.exit()
+                except KeyboardInterrupt:
+                    print("Script stopped by user (Ctrl+C). Saving progress...")
+                    sys.exit(0)
+                except Exception as e:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                    print(f"❌ Failed to execute script. Error: {type(e).__name__}\n{str(e)}")
+                    # Save progress on error
+
+            print(f"\n🎉 Processing complete!")
+
+
+        if __name__ == "__main__":
+            main()
+
+
+    # merge aba_dados resuolts databases
+    elif func == 25:
+        df1 = pd.read_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\resultado_aba_dados_1-2.xlsx")
+        df2 = pd.read_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
+                            r"Social\Teste001\resultado_aba_dados_2-2.xlsx")
+
+        # Step 1: Merge the dataframes
+        merged_df = pd.concat([df1, df2], ignore_index=True)
+
+        # Step 3: Remove duplicate rows
+        merged_df = merged_df.drop_duplicates()
+
+        # Step 4: Reset index (optional, but nice to have clean index)
+        merged_df = merged_df.reset_index(drop=True)
+
+        # Display results
+        print(f"Original df1: {len(df1)} rows")
+        print(f"Original df2: {len(df2)} rows")
+        print(f"After merge: {len(df1) + len(df2)} rows")
+        print(f"After removing duplicates: {len(merged_df)} rows")
+
+        merged_df.to_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - webscraping\Resultado scraping Aba Dados\resultado_aba_dados.xlsx", index=False)
+
+
+    # merges processos sei databases
+    elif func == 26:
+        df1 = pd.read_excel(
+        r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - "
+        r"webscraping\Consulta_SEi\Consultas parciais\consulta_direcao_sei_1-2.xlsx")
+        df2 = pd.read_excel(
+            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - "
+            r"webscraping\Consulta_SEi\Consultas parciais\consulta_direcao_sei_2-2.xlsx")
+
+        pattern = r'^([a-z]+\.[a-z]+)'
+
+        # Step 1: Merge the dataframes
+        merged_df = pd.concat([df1, df2], ignore_index=True)
+
+        # Step 2: Remove rows that contain a period (".") in any cell
+        specific_column = 'texto_link'
+
+        matches_pattern_mask = merged_df[specific_column].astype(str).str.match(pattern, na=False)
+
+        # Keep only rows that DO NOT have a period
+        merged_df = merged_df[~matches_pattern_mask]
+
+        # Step 3: Remove completely empty rows (rows where all values are NaN/empty)
+        merged_df = merged_df.dropna(how='all')
+
+        # Step 4: Remove duplicate rows
+        merged_df = merged_df.drop_duplicates()
+
+        # Step 5: Reset index (optional, but nice to have clean index)
+        merged_df = merged_df.reset_index(drop=True)
+
+        merged_df.to_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
+                           r"Social\SNEAELIS - webscraping\Consulta_SEi\consulta_direcao_sei_final.xlsx")
+        # Display results
+        print(f"Original df1: {len(df1)} rows")
+        print(f"Original df2: {len(df2)} rows")
+        print(f"After merge: {len(df1) + len(df2)} rows")
+
+        # Count rows with periods
+        rows_with_period = matches_pattern_mask.sum()
+        print(f"Rows containing pattern: {rows_with_period}")
+        print(f"After removing pattern rows: {len(merged_df)} rows")
+        print(f"After removing empty rows: {len(merged_df)} rows")
+        print(f"After removing duplicates: {len(merged_df)} rows")
+

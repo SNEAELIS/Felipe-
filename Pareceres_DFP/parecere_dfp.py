@@ -374,7 +374,7 @@ class PWRobo:
 
 
     def requirements(self):
-        threshhold_date = datetime(2025, 10, 8)
+        threshhold_date = datetime(2025, 12, 18)
 
         txt_ = (f"Para inserção das documentações pendentes, que estão relacionadas no parecer emitido em "
                 f"08/10/2025 (aba pareceres), se for o caso.")
