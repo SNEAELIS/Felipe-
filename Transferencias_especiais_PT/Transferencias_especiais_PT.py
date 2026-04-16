@@ -1,3 +1,9 @@
+import time
+import sys
+import pandas as pd
+
+from pathlib import Path
+
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -7,10 +13,6 @@ from selenium.common.exceptions import (TimeoutException, NoSuchElementException
                                         ElementClickInterceptedException, WebDriverException,
                                         StaleElementReferenceException, ElementNotInteractableException)
 from selenium.webdriver.chrome.service import Service
-import pandas as pd
-import time
-import sys
-
 
 # Função para conectar ao navegador já aberto
 def conectar_navegador_existente():
@@ -28,12 +30,15 @@ def conectar_navegador_existente():
             service=Service(ChromeDriverManager().install()),
             options=chrome_options)
 
+        skip_chrome_tab_search(driver=driver)
+
         print("✅ Conectado ao navegador existente com sucesso.")
 
         return driver
     except WebDriverException as e:
         # Imprime mensagem de erro se a conexão falhar
         print(f"❌ Erro ao conectar ao navegador existente: {type(e).__name__}\nError: {str(e)[:200]}...")
+        sys.exit()
 
 
 # Trunca a mensagem de erro
@@ -86,8 +91,9 @@ def clicar_elemento(driver, xpath, retries=3, prt: bool = True):
             print(f"🔍 {last_error}")
 
         except Exception as e:
-            last_error = truncate_error(f"Unexpected error (attempt {tentativa}): {str(e)}")
-            print(f"❌ {last_error}")
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
+            print(f"❌ Erro ao clicar em um elemento:{type(e).__name__}.\n Erro {str(e)[:150]}")
 
         if tentativa < retries:
             time.sleep(tentativa)
@@ -124,8 +130,11 @@ def inserir_texto(driver, xpath, texto, retries=3):
             print(f"✅ Texto inserido no campo:{elemento.text}")
             return True
         except Exception as erro:
-            print(f"❌ Erro ao inserir texto no campo {xpath} (tentativa {tentativa + 1}): {erro[:50]}")
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
+            print(f"❌ Erro ao inserir texto no campo {xpath} (tentativa {tentativa + 1}): {str(erro)[:50]}")
             time.sleep(1)  # Espera antes de tentar novamente
+
     print(f"❌ Falha após {retries} tentativas para inserir texto em {xpath}")
     return False
 
@@ -153,7 +162,9 @@ def obter_texto(driver, xpath):
         texto = elemento.text.strip()
         return texto if texto else None
     except Exception as erro:
-        print(f"❌ Erro ao obter texto do elemento {xpath}: {erro}")
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f"❌ Erro ao obter texto do elemento:{type(e).__name__}.\n Erro {str(e)[:150]}")
         return None
 
 
@@ -275,6 +286,9 @@ def get_radio_selection(driver):
                 time.sleep(1)  # Brief pause before retry
 
             except Exception as e:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                print(f"❌ Erro ao obter elemento botão de rádio:{type(e).__name__}.\n Erro {str(e)[:150]}")
                 print(f"Attempt {attempt + 1} failed:", str(e))
 
         print("All attempts exhausted. Saving debug information...")
@@ -325,7 +339,7 @@ def obter_valor_campo_desabilitado(driver, xpath, call=None):
             elemento = WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.XPATH, xpath)))
         except TimeoutException:
-            print(f"⏱️ Timeout: Elemento não encontrado em 5s - {truncate_error(xpath)}")
+            print(f"⏱️ Timeout: Elemento não encontrado em 5s - {xpath}")
             return "Campo Vazio"
         except NoSuchElementException:
             print(f"🔍 Elemento não existe - {truncate_error(xpath)}")
@@ -363,7 +377,10 @@ def obter_valor_campo_desabilitado(driver, xpath, call=None):
                 valor = None
                 if call:
                     print(f'Erro gerado pela call nº{call}')
-                print(f"❌ Erro inesperado ao acessar elemento.text: {type(e).__name__} - {e}")
+
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                print(f"❌ Erro inesperado ao acessar elemento.text: {type(e).__name__}.\n Erro {str(e)[:150]}")
 
         # Tratamento do valor retornado
         if valor and str(valor).strip():
@@ -377,8 +394,9 @@ def obter_valor_campo_desabilitado(driver, xpath, call=None):
         print(f"👻 Elemento tornou-se obsoleto - {truncate_error(xpath)}")
         return
     except Exception as erro:
-        print(f"❌ Erro ao tentar obetar valor do campo. Err: {type(erro).__name__} -"
-              f" {truncate_error(str(erro))}")
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f"❌ Erro ao tentar obetar valor do campo. Err: {type(erro).__name__}.\n Erro {str(erro)[:150]}")
         return "Campo Vazio"
 
 
@@ -406,11 +424,71 @@ def remover_backdrop(driver):
         """)
         # print("✅ Backdrop removido com sucesso!")
     except Exception as erro:
-        print(f"❌ Erro ao remover backdrop: {erro}")
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f"❌ Erro ao remover backdrop: {type(erro).__name__}.\n Erro {str(erro)[:150]}")
+
+
+# Função para tirar da lista as "abas" do chrome que não são visiveis
+def skip_chrome_tab_search(driver):
+    try:
+        qnt_abas = driver.window_handles
+        abas_uteis = []
+
+        for handle in qnt_abas:
+            try:
+                # Add a small timeout for switching tabs
+                driver.set_page_load_timeout(30)
+                driver.switch_to.window(handle)
+
+                # Try to get URL with fallback
+                try:
+                    url = driver.current_url
+                except (TimeoutException, WebDriverException):
+                    # If we can't get URL, try execute_script as alternative
+                    try:
+                        url = driver.execute_script("return window.location.href;")
+                    except:
+                        url = "unknown"
+
+                print(f"Tab URL: {url}")
+
+                # Skip chrome:// and chrome-extension:// URLs
+                if url and "chrome" not in url.lower():
+                    abas_uteis.append(handle)
+
+            except TimeoutException:
+                print(f"⚠️ Timeout on tab, skipping...")
+                continue
+            except WebDriverException as e:
+                print(f"⚠️ WebDriver error on tab: {type(e).__name__}")
+                continue
+            except Exception as e:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                print(f"⚠️ Unexpected error on tab: {type(e).__name__}.\n Erro {str(e)[:150]}")
+                continue
+
+        # Reset timeout to default (optional)
+        driver.set_page_load_timeout(30)
+
+        if abas_uteis:
+            driver.switch_to.window(abas_uteis[0])
+        else:
+            print("❌ No valid tabs found!")
+            driver.switch_to.window(qnt_abas[0])  # Fallback to first tab
+
+        return abas_uteis
+
+    except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f"❌ Erro ao excluir abas invisíveis do chrome: {type(e).__name__}.\n Erro {str(e)[:150]}")
+        sys.exit()
 
 
 # Função que aplica a espera pelo elemento
-def wait_for_element(driver, xpath: str, timeout: int = 5) -> bool:
+def wait_for_element(driver, xpath: str, timeout: int = 30) -> bool:
     """Aguarda até que um elemento esteja presente na página."""
     try:
         WebDriverWait(driver, timeout).until(
@@ -421,7 +499,7 @@ def wait_for_element(driver, xpath: str, timeout: int = 5) -> bool:
 
 
 # Extrai os dados da tabela de forma concatenada
-def extract_all_rows_text(driver, table_xpath, timeout=2.5):
+def extract_all_rows_text(driver, table_xpath, timeout=30):
     """
     Extracts all text content from each row in an ngx-datatable.
 
@@ -434,6 +512,7 @@ def extract_all_rows_text(driver, table_xpath, timeout=2.5):
         list: List of strings containing each row's full text content
         or None if failed
     """
+    print(f'{'_'*6} Extraindo valores da tabela {'_'*6}')
     try:
         # Wait for at least one row to be present
         table = WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.XPATH, table_xpath)))
@@ -464,12 +543,15 @@ def extract_all_rows_text(driver, table_xpath, timeout=2.5):
         print(f"⌛ Timeout: No rows appeared within {timeout} seconds")
         return None
     except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f"❌ Extraction failed: {type(erro).__name__}.\n Erro {str(erro)[:150]}")
         print(f"❌ Extraction failed: {str(e)[:100]}...")
         return None
 
 
 # Extrai os dados da Lista de Documentos Hábeis
-def extrat_all_cells_text(driver, table_xpath, col_idx, timeout=10):
+def extrat_all_cells_text(driver, table_xpath, col_idx, timeout=30):
     """
     Extracts all text content from a specific column in a ngx-datatable across all pages.
 
@@ -482,6 +564,9 @@ def extrat_all_cells_text(driver, table_xpath, col_idx, timeout=10):
     Returns:
         str: All column data joined with " | " or None if failed
     """
+
+    print(f'{'_'*6} Extraindo valores das células {'_'*6}')
+
     col_data = []
     processed_pages = set()
     current_page = 1
@@ -495,6 +580,7 @@ def extrat_all_cells_text(driver, table_xpath, col_idx, timeout=10):
 
             # Get all rows in current page
             rows = table.find_elements(By.CSS_SELECTOR, 'datatable-body-row')
+            print('debugger')
             if not rows:
                 print("⚠️ No rows found in table")
                 break
@@ -509,6 +595,7 @@ def extrat_all_cells_text(driver, table_xpath, col_idx, timeout=10):
                        '/div/br-select[2]')
                 pagination_info = pagination_info.text.strip()
             except NoSuchElementException:
+                print('No pages found')
                 pagination_info = str(current_page)
 
             if f"{current_page}" in processed_pages:
@@ -549,7 +636,9 @@ def extrat_all_cells_text(driver, table_xpath, col_idx, timeout=10):
         return " | ".join(col_data) if col_data else None
 
     except Exception as e:
-        print(f"❌ Error extracting table data: {str(e)}")
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f"❌ Error extracting table data: {type(e).__name__}\n{str(e)[:100]}")
         return None
 
 
@@ -610,7 +699,7 @@ def loop_primeira_pagina(driver, plano_acao: dict):
         '-basicos/form/br-fieldset[3]/fieldset/div[2]/div[1]/div/br-textarea/div/div[1]/div/textarea'
     ]
 
-    time.sleep(1.5)
+    time.sleep(0.6)
     plano_acao["beneficiario"]["nome"] = obter_valor_campo_desabilitado(driver, lista_caminhos[0])
     plano_acao["beneficiario"]["uf"] = obter_valor_campo_desabilitado(driver, lista_caminhos[1])
     plano_acao["dados_bancarios"]["banco"] = obter_valor_campo_desabilitado(driver, lista_caminhos[2])
@@ -651,11 +740,10 @@ def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
         # [1]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
         '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-dados'
-        '-orcamentarios/br-table[2]/div/ngx-datatable',
+        '-orcamentarios/br-table/div/ngx-datatable',
 
         # [2]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/'
-        'transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/ul/li[3]/button/span',
+        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/ul/li[3]/button',
 
         # [3]
         '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
@@ -669,24 +757,16 @@ def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
         '1]/div/textarea',
 
         # [5]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano'
-        '-trabalho/form/div/div/br-fieldset[2]/fieldset/div[2]/div[2]/div[1]/br-input/div/div[1]/input',
+        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano-trabalho/form/div/div/br-fieldset[2]/fieldset/div[2]/div[2]/div[1]/br-input/div/div[1]/input',
 
         # [6]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano'
-        '-trabalho/transferencia-plano-trabalho-resumo/div/div[6]/div[2]/div',
+        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano-trabalho/form/div/div/br-fieldset[2]/fieldset/div[2]/div[2]/div[1]/br-input/div',
 
         # [7]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano'
-        '-trabalho/br-fieldset[2]/fieldset/div[2]/div',
+        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano-trabalho/br-fieldset[2]/fieldset/div[2]',
 
         # [8]
-        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main'
-        '/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano'
-        '-trabalho/form/div/div/br-fieldset[3]/fieldset/div[2]/div[2]/div[2]/br-table/div/ngx-datatable',
+        '/html/body/transferencia-especial-root/br-main-layout/div/div/div/main/transferencia-especial-main/transferencia-plano-acao/transferencia-cadastro/br-tab-set/div/nav/transferencia-plano-acao-plano-trabalho/form/div/div/br-fieldset[3]/fieldset/div[2]/div[2]',
     ]
 
     try:
@@ -697,14 +777,15 @@ def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
         # Empenho section
         plano_acao["pagamentos"]["empenho"] = extrat_all_cells_text(driver, lista_caminhos[1], 0)
         plano_acao["pagamentos"]["valor"] = extrat_all_cells_text(driver, lista_caminhos[1], 3)
-        plano_acao["pagamentos"]["ordem"] = extrat_all_cells_text(driver, lista_caminhos[1], 5)
+        plano_acao["pagamentos"]["ordem"] = extrat_all_cells_text(driver, lista_caminhos[1], 4)
 
         # Aba Plano de Trabalho
         clicar_elemento(driver, lista_caminhos[2])
-        time.sleep(5)
+        time.sleep(1.2)
 
         # Declarações section
         plano_acao["declaracoes"]["recursos_orcamento"] = get_radio_selection(driver)
+
         plano_acao["declaracoes"]["nao_uso_pessoal"] = obter_valor_campo_desabilitado(driver,
                                                                                       lista_caminhos[3])
         if plano_acao["declaracoes"]["nao_uso_pessoal"] not in ['', 'Campo Vazio']:
@@ -717,7 +798,7 @@ def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
 
         # Prazo de Execução em meses \\ Periodo_exec
         plano_acao["prazo_de_execucao"] = obter_valor_campo_desabilitado(driver, lista_caminhos[5])
-        plano_acao["periodo_exec"] = obter_valor_campo_desabilitado(driver, lista_caminhos[6])
+        plano_acao["periodo_exec"] = " "#obter_valor_campo_desabilitado(driver, lista_caminhos[6])
 
         # Histórico section
         #coletar_dados_hist(driver, lista_caminhos[7], index=index, df_path=df_path)
@@ -727,8 +808,10 @@ def loop_segunda_pagina(driver, index, plano_acao: dict, df, df_path):
 
         return plano_acao
 
-    except Exception as erro:
-        print(f"❌ Erro inesperado: {type(erro).__name__} - {truncate_error(str(erro))}")
+    except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f"❌ Erro no loop de segunda página:{type(e).__name__}.\n Erro {str(e)[:150]}")
         return None
 
 
@@ -766,7 +849,9 @@ def coletar_dados_hist(driver, tabela_xpath, index, df_path):
                 for colmn in colunas_para_salvar
             )
         except KeyError as err:
-            print(f"⚠️ Missing column {err}")
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
+            print(f"⚠️ Missing column {err}:{type(err).__name__}.\n Erro {str(err)[:150]}")
             return True
 
     # Helper function to check empty cells
@@ -829,12 +914,16 @@ def coletar_dados_hist(driver, tabela_xpath, index, df_path):
                             conc_data = table_data[j][:3]
                             break
             except Exception as e:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
                 print(f"❌ Falha na extração de dados histórico: {type(e).__name__} -"
                       f" {truncate_error(str(e))}")
         try:
             if table_data[0][2].strip() == "Enviado para análise":
                 last_data = table_data[0]
         except Exception as i_err:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print(f"❌ Erro ao comparar primeira linha da tabela histórco: {type(i_err).__name__} -"
                   f" {truncate_error(str(i_err))}")
 
@@ -883,16 +972,22 @@ def coletar_dados_hist(driver, tabela_xpath, index, df_path):
 
                 df = pd.concat([upper, new_row_df, lower], ignore_index=True)
         except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print(f"❌ Erro ao organizar DataFrame: {type(e).__name__} - {truncate_error(str(e))}")
 
         try:
             # Save the DataFrame
             df.to_excel(df_path, index=False, engine='openpyxl')
         except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print(f"❌ Erro ao salvar dados histórico: {type(e).__name__} - {truncate_error(str(e))}")
 
     except Exception as erro:
-        print(f"❌ Erro ao coletar dados histórico: {type(erro).__name__} - {truncate_error(str(erro))}")
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f"❌ Erro ao coletar dados histórico:{type(erro).__name__}.\n Erro {str(erro)[:150]}")
 
 
 # Função para coletar executores e metas
@@ -943,6 +1038,7 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
             callback(true);
         }
         """)
+
 
     # Extracts all metas from the currently expanded executor row
     def extract_metas_from_expanded_row():
@@ -1038,8 +1134,11 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
             return goal_data_list
 
         except Exception as e:
-            print(f"❌ Erro crítico ao extrair metas: {type(e).__name__} - {e}")
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
+            print(f"❌ Erro crítico ao extrair metas: {type(e).__name__} - {str(e)[:150]}")
             return []
+
 
     def extract_social_control_data():
         try:
@@ -1070,6 +1169,8 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                             sc_table_data.append(col.text.strip())
 
                 except Exception as ee:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
                     print(f"⚠️ Erro ao extrair dados da tabela de controle social"
                           f": {type(ee).__name__} - {truncate_error(str(ee))}")
 
@@ -1087,13 +1188,19 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
             return organized_sc_list
 
         except Exception as err:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print(f"❌ Erro ao identificar a tabela dados de controle social."
                   f"\n{type(err).__name__} - {truncate_error(str(err))}")
             return [""] * 3
+
+
     try:
         if clicar_elemento(driver=driver, xpath=tabela_xpath, prt=False):
             pass
     except Exception as erro:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         print(f"⚠️ Tabela não encontrada: {type(erro).__name__} - {truncate_error(str(erro))}")
         return
 
@@ -1141,7 +1248,12 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
         "Endereço_Eletrônico_Social": ''
     }
     emails_data = ''
+
     try:
+        for key in colunas_para_salvar:
+            if key not in df.columns:
+                df[key] = ""
+
         try:
             # Find table to count how many rows it has to iterate over
             rows = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located(
@@ -1169,6 +1281,8 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                         "Objeto": objeto,
                     })
                 except Exception as e:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
                     print(
                         f"⚠️ Dados não encontrados: {type(e).__name__} - {truncate_error(str(e))}")
 
@@ -1179,6 +1293,8 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                                                            ".//button[contains(@class, 'br-button')]")
                     botao_expandir.click()
                 except Exception as e:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
                     print(f"❌ Não foi possível clicar para expandir a tabela")
                     print(f"⚠️ Falha encontrada: {type(e).__name__} - {truncate_error(str(e))}")
                 try:
@@ -1198,6 +1314,8 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                         emails_data = obter_texto(driver, emails_path).split('\n')[-1]
 
                 except Exception as e:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
                     print(f"⚠️ Dados não encontrados: {type(e).__name__} - {truncate_error(str(e))}")
 
                 # Get Lista de Conselhos locais ou instâncias de controle social notifications
@@ -1208,6 +1326,8 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                     metas = extract_metas_from_expanded_row()
                 except Exception as e:
                     metas = []
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
                     print(f"❌ Erro ao coletar metas: {type(e).__name__} - {truncate_error(str(e),
                                                                                           max_error_length=50)}")
                 go_back_button_path = ('/html/body/transferencia-especial-root/br-main-layout/div/div/div'
@@ -1229,6 +1349,7 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                 row_to_insert = {**executor_dict, **nova_linha_data}
                 # Insert the merged row, filling empty cells where needed
                 current_row_empty = True
+
                 if insert_index < len(df):
                     current_row_empty = all(
                         pd.isna(df.at[insert_index, col]) or df.at[insert_index, col] == "" for col in
@@ -1354,6 +1475,8 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                             df = pd.concat([upper, new_row_df, lower], ignore_index=True)
 
                     except Exception as erro:
+                        exc_type, exc_value, exc_tb = sys.exc_info()
+                        print(f"Error occurred at line: {exc_tb.tb_lineno}")
                         print(f"❌ Erro ao salvar listas no Excel: {type(erro).__name__} -"
                               f" {truncate_error(str(erro))}")
             # Send data to excel
@@ -1364,6 +1487,8 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
             print(f"❌ Erro ao extrair as linhas. Erro na linha: {line_number}\n{type(erro).__name__} -"
                   f" {truncate_error(str(erro))}")
     except Exception as erro:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         print(f"❌ Erro ao coletar dados: {type(erro).__name__} - {truncate_error(str(erro))}")
 
 
@@ -1379,15 +1504,19 @@ def flatten_dict(d, parent_key='', sep='.'):
     new_key → caminho
     flatten_dict(...) → recursão
     """
-
-    items = {}
-    for k, v in d.items():
-        new_key = f"{parent_key}{sep}{k}" if parent_key else k
-        if isinstance(v, dict):
-            items.update(flatten_dict(v, new_key, sep=sep))  # recursão
-        else:
-            items[new_key] = v
-    return items
+    try:
+        items = {}
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.update(flatten_dict(v, new_key, sep=sep))  # recursão
+            else:
+                items[new_key] = v
+        return items
+    except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f"❌ Erro ao redimencioar dicionário: {type(e).__name__} - {truncate_error(str(e))}")
 
 
 # Verifica se a checkbox está marcada
@@ -1426,7 +1555,9 @@ def esta_selecionado(driver, use_second_case=False):
         return {"declaracoes": None}
 
     except Exception as e:
-        print(f"Error: {e}")
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f"Error: {str(e)[:150]}")
         return {"declaracoes": None}
 
 
@@ -1482,13 +1613,15 @@ def atualiza_excel(df_path, df, index, plano_acao: dict, col_range: list = None,
 
     # Flatten the dictionary and filter only selected keys
     flat_dict = flatten_dict(plano_acao)
+    # Filter dictionary data
     filtered_data = {k: flat_dict.get(k, "") for k in selected_keys if flat_dict.get(k) not in [None, ""]}
 
     # Map to Excel columns
     column_headers = [
-        "Empenho", "Valor", "Ordem do Pagamento", "Indicação Orçamento Beneficiario",
+        "Minuta", "Valor", "Situação", "Indicação Orçamento Beneficiario",
         "Classificação Orçamentária de Despesa", "Declaração Recurso", "Prazo Execução", "Período Execução"
     ]
+
     if second_init:
         df = pd.read_excel(df_path, dtype=str)
 
@@ -1535,12 +1668,57 @@ def list_debugger(my_list):
     print("=== DEBUG END ===\n")
 
 
+# Align the fields inside excel
+def align_meta_and_fields_with_next_custeio(filename:str, output_filename:str=None):
+    # Read the Excel file
+    df = pd.read_excel(filename, dtype=str)
+
+    # The fields to move together with "Meta"
+    columns_to_move = [
+        'Meta',
+        'Descrição',
+        'Unidade de Medida',
+        'Quantidade',
+        'Meses Previstos'
+    ]
+
+    # Check columns exist
+    for col in columns_to_move + ['Categoria']:
+        if col not in df.columns:
+            raise ValueError(f"The DataFrame must contain the column: {col}")
+
+    # Buffer for the values to move
+    buffer = None
+    last_custeio_idx = None
+
+    for idx, row in df.iterrows():
+        if row['Categoria'] == 'Custeio':
+            last_custeio_idx = idx
+        if row['Categoria'] == 'Investimento' and pd.notna(row['Meta']) and str(row['Meta']).strip():
+            # Buffer the entire set of fields
+            buffer = {col: row[col] for col in columns_to_move}
+            # Clear these fields from the Investimento row
+            for col in columns_to_move:
+                df.at[idx, col] = ""
+                df.at[last_custeio_idx, col] = buffer[col]
+            buffer = None  # Clear the buffer
+
+    # Output file name
+    if output_filename is None:
+        if filename.lower().endswith('.xlsx'):
+            old_path = Path(filename)
+            output_filename = old_path.with_name('Planos de ação Emenda PIX.xlsx')
+
+    # Save the aligned DataFrame
+    df.to_excel(output_filename, index=False)
+    print(f"Aligned file saved as: {output_filename}")
+
+
 # Função principal
 def main():
     driver = conectar_navegador_existente()
 
-    planilha_final = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
-                      r"Social\Teste001\Sofia\emendas_pix_db\emendas_pix_db - Copia.xlsx")
+    planilha_final = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Transferencias_Especiais\export_PlanoAcao_1775069545490 - Copia.xlsx"
 
     try:
         df = pd.read_excel(planilha_final, engine='openpyxl').astype(object)
@@ -1620,7 +1798,7 @@ def main():
                 "classificacao_orcamentaria": "",
             }
 
-            codigo = str(row["Código do Plano de Ação"])  # Garante que o código seja string
+            codigo = str(row["Plano de Ação"])  # Garante que o código seja string
 
             # Verifica se o código já foi processado (coluna "Responsável" preenchida e diferente de erro)
             row_without_first_col = row.iloc[1:]  # Excludes index 0 (first column)
@@ -1629,7 +1807,7 @@ def main():
                 index += 1
                 continue
 
-            if pd.isna(df.at[index, "Código do Plano de Ação"]):
+            if pd.isna(df.at[index, "Plano de Ação"]):
                 index += 1
                 continue
 
@@ -1704,7 +1882,7 @@ def main():
 
                 remover_backdrop(driver)
 
-                print(f"\n{' Inicio do loop da primeira página ':=^60}\n")
+                print(f"\n{' Inicio do loop da primeira página ':#^45}\n")
                 # Coleta os dados da primeira pagina
                 plano_acao = loop_primeira_pagina(driver=driver, plano_acao=plano_acao)
                 domain = list(range(1, 12))
@@ -1718,7 +1896,7 @@ def main():
                     fin_range=11  # Last key to use (exclusive)
                 )
 
-                print(f"\n{' Inicio do loop da segunda página ':=^60}\n")
+                print(f"\n{' Inicio do loop da segunda página ':#^45}\n")
                 # Coleta os dados da segunda pagina
                 plano_acao = loop_segunda_pagina(driver=driver, plano_acao=plano_acao, index=index, df=df,
                                                  df_path=planilha_final)
@@ -1749,6 +1927,8 @@ def main():
                 index += 1
 
             except Exception as erro:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
                 last_error = truncate_error(f"Main loop element intercepted: {str(erro)}")
                 print(f"⚠️ {last_error}")
 
@@ -1772,8 +1952,11 @@ def main():
                 continue
 
         print("✅ Todos os dados foram coletados e salvos na planilha!")
+        align_meta_and_fields_with_next_custeio(filename=planilha_final)
         driver.quit()
     except Exception as erro:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         last_error = truncate_error(f"Element intercepted: {str(erro)}, {type(erro).__name__}")
         print(f"❌ {last_error}")
 

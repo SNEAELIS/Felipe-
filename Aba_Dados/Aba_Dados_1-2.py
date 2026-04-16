@@ -18,10 +18,12 @@ class BreakInnerLoop(Exception):
 
 
 class PWRobo:
-    def __init__(self, caminho_arquivo_saida: str, cdp_url: str = "http://localhost:9222"):
+    def __init__(self, caminho_arquivo_saida: str, cdp_url: str = "http://localhost:"):
+        self.port = 9222
         self.caminho_arquivo_saida = caminho_arquivo_saida
         self.playwright = sync_playwright().start()
-        self.browser = self.playwright.chromium.connect_over_cdp(cdp_url)
+        self.browser = self.playwright.chromium.connect_over_cdp(f'{cdp_url}{self.port}')
+
         self.context = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
         self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
 
@@ -36,7 +38,7 @@ class PWRobo:
             self.output_df = pd.DataFrame()
 
         # Enable resource blocking for faster performance
-        self.block_rss()
+        #self.block_rss()
 
         print(f"✅ Connected to existing Chrome instance via Playwright. Connected to page: {self.page.url}")
         
@@ -63,8 +65,8 @@ class PWRobo:
         except PlaywrightError as e:
             print(Fore.RED + f'🔄❌ Failed to reset.\nError: {type(e).__name__}\n{str(e)[:100]}')
 
-        xpaths = ['xpath=//*[@id="menuPrincipal"]/div[1]/div[3]',
-                  'xpath=//*[@id="contentMenu"]/div[1]/ul/li[2]/a']
+        xpaths = ['xpath=//*[@id="menuPrincipal"]/div[1]/div[4]',
+                  'xpath=//*[@id="contentMenu"]/div[1]/ul/li[6]/a']
         try:
             for xpath in xpaths:
                 self.page.locator(xpath).click(timeout=10000)
@@ -76,7 +78,7 @@ class PWRobo:
     def campo_pesquisa(self, numero_processo):
         """ Fill in the search field and access the desired program"""
         try:
-            campo_pesquisa_locator = self.page.locator('xpath=//*[@id="consultarNumeroProposta"]')
+            campo_pesquisa_locator = self.page.locator('xpath=//*[@id="consultarNumeroConvenio"]')
             campo_pesquisa_locator.fill(numero_processo)
             campo_pesquisa_locator.press('Enter')
             try:
@@ -264,10 +266,11 @@ class PWRobo:
             for name in sheet_names_list:
                 print(f"- {name}")
 
-            data_frame = complete_data_frame['Sheet1']
+            data_frame = complete_data_frame['Aspar']
+
 
             if filter_:
-                data_frame = data_frame[data_frame['Nº Proposta'].astype(str).str.contains('/',na=False)]
+                data_frame = data_frame[data_frame['Instrumento'].astype(str).str.contains('/',na=False)]
                 data_frame = data_frame.drop_duplicates()
 
             print(f"✅ Loaded {len(data_frame)} rows from Excel.")
@@ -285,64 +288,92 @@ class PWRobo:
 
         numero_proposta = str(numero_proposta)
 
-        pattern = r'^\d{6}/\d{4}'
-
         if '_' in numero_proposta:
-            numero_proposta_fixed = numero_proposta.replace('_', '/')
-            return numero_proposta_fixed
+            if '/' in numero_proposta:
+                numero_proposta = numero_proposta.replace('_', '/')
+                left, right = numero_proposta.split('/', 1)
 
-        if re.findall(pattern, numero_proposta):
-            return numero_proposta
+                fixed = f"{left.zfill(6)}/{right}"
+
+                pattern = r'^\d{6}/\d{4}'
+                if re.match(pattern, fixed):
+                    return fixed
+                else:
+                    return None
+
         else:
-            return False
+            if '/' in numero_proposta:
+                left, right = numero_proposta.split('/', 1)
 
+                fixed = f"{left.zfill(6)}/{right}"
+
+                pattern = r'^\d{6}/\d{4}'
+                if re.match(pattern, fixed):
+                    return fixed
+                else:
+                    return None
 
 def get_number_part(proposal):
     """Extract the number before the slash and remove leading zeros"""
-    if '/' in proposal:
-        return proposal.split('/')[0].lstrip('0') or '0'
-    return proposal.lstrip('0') or '0'
+    return str(proposal)
 
 
 def main() -> None:
-    dir_path = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\propostas_extras_na_base.xlsx"
+    dir_path = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Obras Maranhão - ASPAR-SNEAELIS.xlsx")
+
 
     output_path = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
                 r"Social\Teste001\resultado_aba_dados_1-2.xlsx")
 
     try:
         robo = PWRobo(output_path)
+        other_door = 9222#input('Enter the door you are using:\n If you are using 9222, just type enter.  ')
+        robo.port = str(other_door)
     except Exception as e:
         print(f"\n‼️ Fatal error starting the robot: {e}")
         sys.exit("Stopping the program.")
 
     # Load DataFrame
-    df = robo.extrair_dados_excel(dir_path, filter_=True)
-    mid_point = len(df) // 2
-    df = df.iloc[:mid_point].copy()
+    df = robo.extrair_dados_excel(dir_path)
     if df is None:
         print("❌ Failed to load Excel file. Exiting.")
         return
-
-    # Checks which program has been scraped alraady
     if os.path.exists(output_path):
-        jump_df = robo.extrair_dados_excel(output_path)
+        # Load the existing output file
+        df_existing = pd.read_excel(output_path)
 
-        # remove later
-        finished_programs = jump_df[jump_df['Valor Global'].notna() & (jump_df['Valor Global'] != '')]
+        # Find completed programs (with Valor Global filled)
+        if 'Valor Global' in df_existing.columns and 'Código do Instrumento' in df_existing.columns:
+            finished_programs = df_existing[
+                df_existing['Valor Global'].notna() &
+                (df_existing['Valor Global'] != '')
+                ]
 
-        # Remove finished programs from the jump list to avoid skipping them in case they were marked as done by mistake
-        to_jump = finished_programs['Número da Proposta'].tolist()
+            # Get list of completed proposal numbers
+            to_jump = finished_programs['Código do Instrumento'].tolist()
 
-        # Create sets of number parts
-        finished_numbers = {get_number_part(p) for p in to_jump if len(p.split('/')) <= 6}
-        source_numbers = df.iloc[:, 0].apply(get_number_part)
+            if to_jump:
+                print(f"✅ Port {9222}: Found {len(to_jump)} already completed proposals")
 
-        # Create mask based on number part match
-        filter_mask = source_numbers.isin(finished_numbers)
+                # Extract number parts for comparison
+                finished_numbers = {get_number_part(p) for p in to_jump }
+                source_numbers = df.iloc[:, 0].apply(get_number_part)
 
-        df = df[~filter_mask]
+                # Create filter mask
+                filter_mask = source_numbers.isin(finished_numbers)
+                filtered_out = filter_mask.sum()
 
+                # Apply filter
+                df = df[~filter_mask]
+                df = df.dropna(how='all')
+
+                print(f"🎯 Port {9222}: Filtered out {filtered_out} already completed proposals")
+            else:
+                print(f"📭 Port {9222}: No completed proposals found in output file")
+        else:
+            print(f"⚠️ Port {9222}: Output file missing required columns")
+    else:
+        print(f"🆕 Port {9222}: No existing output file, processing all {len(df)} proposals")
     robo.consulta_proposta()
 
     start_time = time.time()
@@ -351,9 +382,10 @@ def main() -> None:
 
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="Processing First Half", unit="prop"):
         numero_processo_temp = row.iloc[0]
-        numero_processo = robo.fix_prop_num(numero_processo_temp)
+        #numero_processo = robo.fix_prop_num(numero_processo_temp)
+        numero_processo = numero_processo_temp
 
-        if not numero_processo:
+        if not numero_processo or numero_processo == 'nan' :
             continue
 
         tqdm.write(f"\n{'⚡' * 3}🚀 EXECUTING PROPOSAL: {numero_processo} 🚀{'⚡' * 3}".center(70, '='))

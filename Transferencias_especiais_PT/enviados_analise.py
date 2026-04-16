@@ -16,7 +16,7 @@ from selenium.common.exceptions import (TimeoutException, NoSuchElementException
                                         ElementClickInterceptedException, WebDriverException,
                                         StaleElementReferenceException)
 from selenium.webdriver.chrome.service import Service
-
+from Transferencias_especiais_PT import skip_chrome_tab_search
 
 # Função para conectar ao navegador já aberto
 def conectar_navegador_existente():
@@ -35,13 +35,15 @@ def conectar_navegador_existente():
             service=Service(ChromeDriverManager().install()),
             options=chrome_options)
 
-        handles = driver.window_handles
-        print(handles)
-        driver.switch_to.window(handles[-1])
+        skip_chrome_tab_search(driver=driver)
+
+
         print("✅ Conectado ao navegador existente com sucesso.")
 
         return driver
     except WebDriverException as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         # Imprime mensagem de erro se a conexão falhar
         print(f"❌ Erro ao conectar ao navegador existente: {e}")
 
@@ -74,6 +76,8 @@ def clicar_elemento(driver, xpath, retries=3):
                 elemento.click()
                 return True
         except StaleElementReferenceException:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print("🔄 Stale element detected! Attempting recovery...")  # Debug print
             # Wait for the old element to go stale, then re-find
             WebDriverWait(driver, 10).until(EC.staleness_of(elemento))
@@ -82,18 +86,26 @@ def clicar_elemento(driver, xpath, retries=3):
             new_element.click()
 
         except ElementClickInterceptedException as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             last_error = truncate_error(f"Element intercepted on click (attempt {tentativa}): {str(e)}")
             print(f"⚠️ {last_error}")
 
         except TimeoutException as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             last_error = truncate_error(f"Timeout (attempt {tentativa}): {str(e)}")
             print(f"⏱️ {last_error}")
 
         except NoSuchElementException as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             last_error = truncate_error(f"Element not found (attempt {tentativa}): {str(e)}")
             print(f"🔍 {last_error}")
 
         except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             last_error = truncate_error(f"Unexpected error (attempt {tentativa}): {str(e)}")
             print(f"❌ {last_error}")
 
@@ -116,6 +128,8 @@ def inserir_texto(driver, xpath, texto, retries=3):
             print(f"✅ Texto inserido no campo:{elemento.text}")
             return True
         except Exception as erro:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print(f"❌ Erro ao inserir texto no campo {xpath} (tentativa {tentativa + 1}): {erro}")
             time.sleep(1)  # Espera antes de tentar novamente
     print(f"❌ Falha após {retries} tentativas para inserir texto em {xpath}")
@@ -131,6 +145,8 @@ def obter_texto(driver, xpath):
         texto = elemento.text.strip()
         return texto if texto else None
     except Exception as erro:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         print(f"❌ Erro ao obter texto do elemento {xpath}: {erro}")
         return None
 
@@ -143,9 +159,13 @@ def obter_valor_campo_desabilitado(driver, xpath):
             elemento = WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.XPATH, xpath)))
         except TimeoutException:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print(f"⏱️ Timeout: Elemento não encontrado em 5s - {truncate_error(xpath)}")
             return "Campo Vazio"
         except NoSuchElementException:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print(f"🔍 Elemento não existe - {truncate_error(xpath)}")
             return "Campo Vazio"
 
@@ -158,6 +178,8 @@ def obter_valor_campo_desabilitado(driver, xpath):
                 lambda d: elemento.get_attribute("value") and elemento.get_attribute("value").strip() != "")
             valor = elemento.get_attribute("value")
         except TimeoutException:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             pass  # Vamos tentar outros métodos
 
         # Método 2: JavaScript para campos desabilitados
@@ -167,6 +189,8 @@ def obter_valor_campo_desabilitado(driver, xpath):
                     "return arguments[0].value || arguments[0].defaultValue;",
                     elemento)
             except Exception as js_err:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
                 print(f"⚠️ JS fallback falhou: {truncate_error(str(js_err))}")
 
         # 3. Tratamento do valor retornado
@@ -178,9 +202,13 @@ def obter_valor_campo_desabilitado(driver, xpath):
             print("ℹ️ Campo vazio ou sem valor válido")
             return "Campo Vazio"
     except StaleElementReferenceException:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         print(f"👻 Elemento tornou-se obsoleto - {truncate_error(xpath)}")
         return None
     except Exception as erro:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         print(f"❌ Erro inesperado: {type(erro).__name__} - {truncate_error(str(erro))}")
         return None
 
@@ -197,6 +225,8 @@ def remover_backdrop(driver, show_msg=True):
         if show_msg:
             print("✅ Backdrop removido com sucesso!")
     except Exception as erro:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         print(f"❌ Erro ao remover backdrop: {erro}")
 
 
@@ -208,6 +238,8 @@ def wait_for_element(driver, xpath: str, timeout: int = 10) -> bool:
             EC.presence_of_element_located((By.XPATH, xpath)))
         return True
     except Exception:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         return False
 
 
@@ -256,12 +288,15 @@ def extract_all_rows_text(driver, table_xpath, timeout=10, count: int = 0):
         return joined_row
 
     except TimeoutException:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         print(f"❌ Timeout: No rows appeared within {timeout} seconds")
         return None
     except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         print(f"❌ Extraction failed: {str(e)[:100]}...")
         return None
-
 
 
 # Navega pela primeira página e coleta os dados
@@ -320,6 +355,8 @@ def coletar_dados_hist(driver, tabela_xpath, index, df_path, sheet_name, df) -> 
                     data = table_data[0][:3]  # First 3 cells
 
             except Exception as erro:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
                 print(f"❌ Erro ao processar a tabela: {type(erro).__name__}\n{str(erro)[:50]}")
 
         # Save to DataFrame
@@ -337,7 +374,6 @@ def coletar_dados_hist(driver, tabela_xpath, index, df_path, sheet_name, df) -> 
     except Exception as erro:
         exc_type, exc_value, exc_tb = sys.exc_info()
         print(f"Error occurred at line: {exc_tb.tb_lineno}")
-
         print(f"❌ Erro ao coletar dados: {type(erro).__name__}")
 
 
@@ -352,7 +388,9 @@ def reset_browser(driver):
         print("🚀 Iniciando processo: acessando consultas de planos de ação.")
         remover_backdrop(driver)
     except Exception as e:
-        print(f'❌ Falha ao resetar navegador.\nFalha{e[:80]}')
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f'❌ Falha ao resetar navegador.\nFalha{str(e)[:80]}')
 
 
 # Função principal
@@ -371,13 +409,15 @@ def main(xlsx_path):
             try:
                 drop_rows = []
                 for i, r in df.iterrows():
-                    if pd.notna(r.iloc[2]):
+                    if len(df.columns) > 2:
                         drop_rows.append(i)
                 df.drop(drop_rows, inplace=True)
                 df.to_excel(planilha_final,sheet_name=sheet_name, index=False, engine='openpyxl')
                 print(f"✅ Nº de dados removidos da planilha '{sheet_name}': {len(drop_rows)}")
             except Exception as e:
-                print(f'{type(e).__name__}\n{e[:80]}')
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                print(f'{type(e).__name__}\n{str(e)[:80]}')
 
             print(f"✅ Planilha {sheet_name} lida com {len(df)} linhas.")
 
@@ -488,6 +528,8 @@ def main(xlsx_path):
                                     "/div[1]/br-breadcrumbs/div/ul/li[2]/a")
 
                 except Exception as erro:
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    print(f"Error occurred at line: {exc_tb.tb_lineno}")
                     last_error = truncate_error(f"Main loop element intercepted: {str(erro)}")
                     print(f"⚠️ {last_error}")
 
@@ -497,6 +539,8 @@ def main(xlsx_path):
                                                 "transferencia-plano-acao/transferencia-plano-acao-consulta/"
                                                 "br-table/div/div/div/button")
                     except:
+                        exc_type, exc_value, exc_tb = sys.exc_info()
+                        print(f"Error occurred at line: {exc_tb.tb_lineno}")
                         print("⚠️ Falha ao recuperar a tela de consulta. Reiniciando navegação...")
                         driver.get("about:blank")
                         clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/"
@@ -514,6 +558,8 @@ def main(xlsx_path):
                   f"novos dados adicionados")
 
     except Exception as erro:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         last_error = truncate_error(f"Element intercepted: {str(erro)}")
         print(f"❌ {last_error}")
         print(f'{type(erro).__name__}')
@@ -541,14 +587,15 @@ def send_emails_from_excel(excel_path,):
             e_mail = outlook.CreateItem(0)
 
             e_mail.To = email
-            e_mail.CC = 'maria.dourado@esporte.gov.br'
             e_mail.Subject = subject
             e_mail.HTMLBody = html_body
 
-            e_mail.Send()  # Opens email for review (instead of .Send())
+            e_mail.Display()  # Opens email for review (instead of .Send())
             print(f"📧 Email prepared for: {email}")
             return True
         except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print(f"❌ Failed to prepare email for {email}: \n{e}")
             return False
 
@@ -590,7 +637,7 @@ def send_emails_from_excel(excel_path,):
            # Close all tags
            html_body += """</td>
                </tr>
-           </table>
+            </table>
            </body>
            </html>"""
         return html_body, subject
@@ -599,7 +646,7 @@ def send_emails_from_excel(excel_path,):
         """Reads Excel and extracts Columns A, B, C if C has data."""
         try:
             df = pd.read_excel(excel_path, dtype=str)
-            email = "sofia.souza@esporte.gov.br"
+            email = "maria.dourado@esporte.gov.br"
             extra_data_list = []  # Stores {A, B, C} dicts
 
             for _, row in df.iterrows():
@@ -620,6 +667,8 @@ def send_emails_from_excel(excel_path,):
                 return [], []
 
         except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
             print(f"❌ Failed to read Excel file: \n{e}")
             return [], []
 
@@ -632,21 +681,16 @@ def send_emails_from_excel(excel_path,):
             html_body, subject = generate_email_body(extra_data_list)  # Pass single entry
             prepare_outlook_email(email, subject, html_body)
     except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         print(f"❌ No data to prepare email for {type(e).__name__}: \n{str(e)[:100]}")
 
 
 if __name__ == "__main__":
     xlsx_paths = [
-        #xlsx_path_2025
-        (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-         r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - normal.xlsx'),
-
-        # xlsx_path_2025_reprovados
-        (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-        r'Social\Teste001\Sofia\PT_SNEAELIS_env_para_analise\enviados_para_analise 2025 - reprovados.xlsx')
+        r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Transferencias_Especiais\Conferência Robô - 16abr.xlsx"
     ]
 
     for idx, path in enumerate(xlsx_paths):
         main(path)
         send_emails_from_excel(path)
-
