@@ -1,5 +1,6 @@
 import shutil
 import re
+import sys
 import time
 import os
 
@@ -30,27 +31,59 @@ def resetar_log():
     with open("log.txt", "w", encoding="utf-8") as log_file:
         log_file.write("")
 
+# --- Garante que o navegador esteja na aba correta e conectardo ao sei ---
+def switch_to_sei(driver):
+    target_url = "sei.mds.gov"
+
+    # 1. Check if we are already on the right page to save time
+    try:
+        if target_url in driver.current_url:
+            print("✅ Already on the correct page.")
+            return True
+    except Exception:
+        # If the current window was closed manually, current_url might fail
+        pass
+
+    # 2. Store the current window handle to return if search fails
+    original_window = driver.current_window_handle
+    all_windows = driver.window_handles
+
+    # 3. Iterate through all open tabs
+    for handle in all_windows:
+        driver.switch_to.window(handle)
+        print(f'Current handle == {driver.current_url}')
+
+        # Check if this tab's URL contains our target
+        if target_url in driver.current_url:
+            print(f"🎯 Found and switched to: {driver.current_url}")
+            return True
+
+    # 4. Fallback: If not found, return to the original tab
+    print("❌ Target URL not found in any open tabs.")
+    driver.switch_to.window(original_window)
+    sys.exit()
+    return False
+
 
 # --- Conectar ao navegador existente ---
-def conectar_navegador_existente(porta: int = 9222):
+def conectar_navegador_existente(porta: int):
     try:
         print(f"Tentando conectar ao navegador na porta {porta}...")
         opcoes_chrome = Options()
         opcoes_chrome.add_experimental_option("debuggerAddress", f"127.0.0.1:{porta}")
-        opcoes_chrome.add_experimental_option("detach", True)
 
         navegador = webdriver.Chrome(options=opcoes_chrome)
 
-        handles = navegador.window_handles
-        print(handles)
+        switch_to_sei(driver=navegador)
         print("Current URL:", navegador.current_url)
 
         print("✅ Conectado ao navegador existente com sucesso!")
         registrar_log("Conectado ao navegador com sucesso.")
         return navegador
-    except WebDriverException:
+    except WebDriverException as webe:
         msg = "Erro ao conectar. Verifique se o Chrome está aberto com depuração."
         print("❌", msg)
+        print(f'{type(webe).__name__}\n\n{str(webe)[:100]}')
         registrar_log(f"ERRO: {msg}")
         return None
 
@@ -87,10 +120,9 @@ def ler_processos_validos(caminho_excel: str, nome_coluna: str = "processo") -> 
 
     padrao = re.compile(r"^\d{5}\.\d{6}\/\d{4}-\d{2}$")  # ex: 71000.037605/2025-61
     processos_validos = df[nome_coluna].dropna().astype(str).apply(formato_padrao)
-    print(processos_validos)
 
     processos_filtrados = [proc for proc in processos_validos if padrao.match(proc)]
-
+    processos_filtrados.sort()
     print(f"🔍 Total de processos válidos encontrados: {len(processos_filtrados)}")
     registrar_log(f"{len(processos_filtrados)} processos válidos encontrados.")
 
@@ -124,7 +156,7 @@ def extrair_links_processo(navegador, numero_processo):
 
         # Verificar se apareceu mensagem de "sem resultados"
         try:
-            div_sem_resultado = WebDriverWait(navegador, 2).until(EC.presence_of_element_located((By.CLASS_NAME,
+            div_sem_resultado = WebDriverWait(navegador, 1).until(EC.presence_of_element_located((By.CLASS_NAME,
                                                                                                   "pesquisaSemResultado")))
 
             if div_sem_resultado and div_sem_resultado.is_displayed():
@@ -141,9 +173,6 @@ def extrair_links_processo(navegador, numero_processo):
                 in_case_empty[0]["texto_link"] = "Nenhum resultado encontrado"
                 return in_case_empty
         except Exception as e:
-            print(f"⚠ div_sem_resultado não encontrada")
-            print(f"Err:{type(e).__name__}.\nMSG: {str(e)[:100]}")
-
             # Se não encontrar a div de sem resultados, continua normalmente
             pass
 
@@ -294,7 +323,7 @@ def delete_destiny_data(arquivo_destino, create_backup=True):
 
 
 # --- Filtra todos os processos já pesquisados com base no arquivo de saída ---
-def obter_processos_processados(arquivo_destino, process_column='processo'):
+def obter_processos_processados(arquivo_destino, process_column='processo') -> set:
     """
     Get list of already processed processes from destiny file
 
@@ -334,7 +363,7 @@ def append_to_excel_safe(df_new_data, arquivo_destino, make_backup=True):
     try:
         # Create backup if requested and file exists
         if make_backup and os.path.exists(arquivo_destino):
-            backup_path = arquivo_destino.replace('.xlsx', f'_backup_.xlsx')
+            backup_path = arquivo_destino.replace('.xlsx', f'_backup.xlsx')
             shutil.copy2(arquivo_destino, backup_path)
             print(f"💾 Backup created: {backup_path}")
 
@@ -414,12 +443,19 @@ def executar_scraping():
 
         print(
             f"\n{indice} {'>' * 10} Porcentagem concluída:"
-            f" {(indice / (max_linha // 2)) * 100:.2f}% | ETA: {eta_minutes:02d}:{eta_secs:02d}\n")
+            f" {(indice / max_linha) * 100:.2f}% | ETA: {eta_minutes:02d}:{eta_secs:02d}\n")
 
     resetar_log()
+
     arquivo_fonte = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
                      r"Social\Teste001\propostas_SEi.xlsx")
-    arquivo_destino = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - webscraping\Consulta_SEi\Consultas parciais\consulta_direcao_sei_1-2.xlsx"
+
+    quarter = int(input('Digite qual quarto da base está sendo executado (between 1 to 4) :: '))
+
+    # arquivo_destino = fr"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - webscraping\Consulta_SEi\Consultas parciais\consulta_direcao_sei_{quarter}-4.xlsx"
+
+    arquivo_destino = fr'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Processo_SEi\_consulta_direcao_sei_{quarter}-4.xlsx'
+
 
     reset_df = input(str('Deseja resetar o Data_Frame? [Y/n]'))
     if reset_df == 'Y':
@@ -438,51 +474,78 @@ def executar_scraping():
         registrar_log("Execução abortada: navegador não conectado.")
         return
 
-    processos_todos = ler_processos_validos(arquivo_fonte)
-    max_linha = len(processos_todos) + 1
 
-    processos_processados = obter_processos_processados(arquivo_destino=arquivo_destino)
+    processos_todos = ler_processos_validos(arquivo_fonte) # Is a list
 
-    todos_os_resultados = []
+    # Divide the execution in parts
+    quarter_size = len(processos_todos) // 4
+    start_quarter = (quarter - 1) * quarter_size
+    end_quarter = quarter * quarter_size
+
+    processos_todos = processos_todos[start_quarter: end_quarter]
+
+    processos_processados = obter_processos_processados(arquivo_destino=arquivo_destino) # Is a set
+
+    processos_todos = list(set(processos_todos).difference(processos_processados))
+
+
+
     indice = 1
 
-    metade = len(processos_todos) // 2
 
-    for processo in processos_todos[: metade]:
-        eta(indice)
-        if processo in processos_processados:
-            print(f"🔄 Ignorando {processo}.")
-            continue
+    print(f'Number of processos: {len(processos_todos)}')
 
-        print(f"🚀 Executando: {processo}")
-        resultado = extrair_links_processo(navegador, processo)
-        todos_os_resultados.extend(resultado)
+    max_linha = len(processos_todos) + 1
 
-        indice += 1
+    todos_os_resultados = []
+    for processo in processos_todos:
+            try:
+                eta(indice)
 
-        # Exporta a cada 10 processos OU no último processo
-        if indice % 10 == 0 or indice == len(processos_todos):
-            print(f"💾 Salvando checkpoint após {indice} processos...")
+                print(f"🚀 Executando: {processo}")
+                resultado = extrair_links_processo(navegador, processo)
+                todos_os_resultados.extend(resultado)
 
-            # Append to main file incrementally
-            df_parcial = pd.DataFrame(todos_os_resultados)  # Just the last batch
+                indice += 1
 
-            # Keep rows where 'texto_link' contains '/' AND does NOT contain '.'
-            df_cleaned = df_parcial[df_parcial['texto_link'].str.contains('/') & ~df_parcial['texto_link'].str.contains(r'\.')]
+                # Exporta a cada 10 processos OU no último processo
+                if indice % 10 == 0 or indice == len(processos_todos):
+                    print(f"💾 Salvando checkpoint após {indice} processos...")
 
-            append_to_excel_safe(df_cleaned, arquivo_destino, make_backup=False)
+                    # Append to main file incrementally
+                    df_parcial = pd.DataFrame(todos_os_resultados)  # Just the last batch
 
-            # Clear results to free memory (optional)
-            todos_os_resultados = []
+                    # Keep rows where 'texto_link' contains '/' AND does NOT contain '.'
+                    phrase = "Processo não possui andamentos abertos."
+
+                    df_cleaned = df_parcial[
+                        (df_parcial['texto_link'].str.contains('/') & ~df_parcial['texto_link'].str.contains(r'\.')) |
+                        (df_parcial['texto_link'] == phrase)
+                        ]
+
+                    append_to_excel_safe(df_cleaned, arquivo_destino, make_backup=False)
+
+                    # Clear results to free memory (optional)
+                    todos_os_resultados = []
+            except Exception as e:
+                print(type(e).__name__)
+                print(str(e)[:100])
 
     # Exportação final garantida (caso o último grupo não seja múltiplo de 10)
     print(f"💾 Salvando dados finais...")
 
     # Append to main file
     df_final = pd.DataFrame(todos_os_resultados)
+    print("SHAPE:", df_final.shape)
+    print("COLUMNS:", df_final.columns.tolist())
+    print(df_final.head(3))
 
-    df_cleaned = df_final[df_final['texto_link'].str.contains('/') & ~df_final['texto_link'].str.contains(r'\.')]
+    phrase = "Processo não possui andamentos abertos."
 
+    df_cleaned = df_final[
+        (df_final['texto_link'].str.contains('/') & ~df_final['texto_link'].str.contains(r'\.')) |
+        (df_final['texto_link'] == phrase)
+        ]
     append_to_excel_safe(df_cleaned, arquivo_destino, make_backup=True)
 
     registrar_log("✅ Execução finalizada com sucesso.")

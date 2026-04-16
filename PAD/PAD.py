@@ -48,7 +48,8 @@ class Robo:
             # Inicia as opções do Chrome
             self.chrome_options = webdriver.ChromeOptions()
             # Endereço de depuração para conexão com o Chrome
-            self.chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
+            self.chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222"
+                                                                           "")
             # Garante que nenhuma "Tab Search" seja aberta ao iniciar
             self.chrome_options.add_argument('--disable-features=TabSearch')
             self.chrome_options.add_argument('--disable-component-extensions-with-background-pages')
@@ -72,6 +73,7 @@ class Robo:
             qnt_abas = self.skip_chrome_tab_search()
 
             self.driver.switch_to.window(qnt_abas[0])
+            print(self.driver.current_url)
 
             # Defines Logger
             self.logger = self.setup_logger()
@@ -83,7 +85,7 @@ class Robo:
             # Imprime mensagem de erro se a conexão falhar
             print(f"❌ Erro ao conectar ao navegador existente: {e}")
             # Define o driver como None em caso de falha na conexão
-            self.driver = None
+            sys.exit('Falha ao iniciar o script')
 
     def webdriver_element_wait(self, xpath: str, tm_ot: int=8):
         """
@@ -107,13 +109,14 @@ class Robo:
 
     def skip_chrome_tab_search(self):
         qnt_abas = self.driver.window_handles
+        abas_limpas = qnt_abas
         for handle in qnt_abas:
             self.driver.switch_to.window(handle)
             url = self.driver.current_url
             if "chrome" in url:
-                qnt_abas.remove(handle)
+                abas_limpas.remove(handle)
 
-        return  qnt_abas
+        return  abas_limpas
 
     # Navega até a página de busca da proposta
     def consulta_proposta(self):
@@ -450,6 +453,14 @@ class Robo:
                     desc_item.send_keys(desc_item_txt)
 
                     # Código da Natureza de Despesa
+                    # Se tiver encargo na descrição mudar o código sómente de profissional
+                    if 'encargo' in desc_item_txt.lower() and tipo_serv == 'recursos humanos':
+                        cod_natur_desp = '33903699'
+
+                    # Corrige o código do item de material esportivo que seja um "Uniforme"
+                    if 'uniforme' in desc_item_txt.lower() and tipo_serv in ['material esportivo', 'material esportivo com cotação']:
+                        cod_natur_desp = '33903023'
+
                     cod_natur = self.webdriver_element_wait(lista_campos[1])
                     cod_natur.clear()
                     cod_natur.send_keys(cod_natur_desp)
@@ -462,9 +473,9 @@ class Robo:
                         un_fornecimento = un_fornecimento.split(' ')[-1]
                     if un_fornecimento in ['mensal', 'mês', 'meses']:
                         un_fornecimento = 'MÊS'
-                    elif un_fornecimento in ['unidade', 'unidades']:
+                    elif un_fornecimento in ['unidade', 'unidades', 'partida', 'partidas']:
                         un_fornecimento = 'UN'
-                    elif un_fornecimento in ['diaria', 'diária', 'diárias', 'benefícios/dia', 'partida']:
+                    elif un_fornecimento in ['diaria', 'diária', 'diárias', 'benefícios/dia']:
                         un_fornecimento = 'DIA'
                     elif un_fornecimento in ['metro']:
                         un_fornecimento = 'M'
@@ -474,6 +485,8 @@ class Robo:
                         un_fornecimento = 'L'
                     elif un_fornecimento in ['pacote']:
                         un_fornecimento = 'PCT'
+                    elif un_fornecimento in ['quilo']:
+                        un_fornecimento = 'KG'
                     elif pd.isna(un_fornecimento) or un_fornecimento == 'nan' or un_fornecimento == 'N/A':
                         print('Valor não encontrado ou igual a zero\n')
                         continue
@@ -701,10 +714,11 @@ class Robo:
     # Corrige o número da proposta que vem na planilha
     @staticmethod
     def fix_prop_num(numero_proposta):
-        if '_' in numero_proposta:
+        if '_' in numero_proposta and r'/' not in numero_proposta:
             numero_proposta_fixed = numero_proposta.replace('_', '/')
         else:
             numero_proposta_fixed = numero_proposta
+
         return numero_proposta_fixed
 
 
@@ -861,7 +875,8 @@ class Robo:
                                if not unicodedata.combining(c))
 
             categories = {
-                'BEM': ['Material Esportivo', 'Uniformes', 'Alimentação', 'Bem', 'Material Esportivo com Cotação'],
+                'BEM': ['Agua','Material Esportivo', 'Uniformes', 'Alimentação', 'Bem', 'Material Esportivo com Cotação'],
+
                 'SERVICO': ['Recursos Humanos', 'Administrativa', 'Serviços', 'Identidades/Divulgações',
                             'Eventos', 'SERVIÇO'],
                 'OBRA': ['obra'],
@@ -884,7 +899,7 @@ class Robo:
 # Get's a text and map to a specific type of expenditure, if more than one, group them and return
 def map_description(grouped_df):
     try:
-        bem_indices = []
+        agua_indice = []
 
         for idx, row in grouped_df.iterrows():
             text = str(row.iloc[2])
@@ -894,19 +909,18 @@ def map_description(grouped_df):
 
             # Check for agua mineral patterns
             patterns = [
-                r'agua mineral', r'aguamineral', r'agua.*mineral', r'mineral.*agua',
-                r'kit lanche', r'kitlanche', r'kit.*lanche', r'lanche.*kit', r'kits lanche'
+                r'agua mineral', r'aguamineral', r'agua.*mineral', r'mineral.*agua', r'agua'
             ]
 
             # Check if this row matches any BEM pattern
             if any(re.search(pattern, normalized) for pattern in patterns):
-                bem_indices.append(idx)
+                agua_indice.append(idx)
 
         # Create separate DataFrames
-        bem_df = grouped_df.loc[bem_indices] if bem_indices else pd.DataFrame()
-        servico_df = grouped_df.drop(bem_indices) if bem_indices else grouped_df.copy()
+        agua_df = grouped_df.loc[agua_indice] if agua_indice else pd.DataFrame()
+        kit_alim_df = grouped_df.drop(agua_indice) if agua_indice else grouped_df.copy()
 
-        return {"BEM": bem_df, "SERVICO": servico_df}
+        return {"BEM": agua_df, "SERVICO": kit_alim_df}
 
     except Exception as e:
         print(f"Error in map_description. Error_Type: {type(e).__name__}.\nError: {str(e)[:100]}")
@@ -932,7 +946,7 @@ def main() -> None:
         'uniforme': '33903023',
         'impressos': '33903063',
         'premiacao': '33903004',
-        'alimentacao': '33903007',
+        'alimentacao': '33903041',
         'encargos_trab': '33903918',
         'material_esportivo': '33903014',
         'identidades/divulgações': '33903963',
@@ -940,6 +954,7 @@ def main() -> None:
         'divulgações': '33903963',
         'tributo': '33904718',
         'material esportivo com cotação': '33903014',
+        'agua': '33903007'
     }
 
 
@@ -988,6 +1003,7 @@ def main() -> None:
                     # Get all unique, non-null values in column 1 that appear after the 'TIPO' row
                     unique_values_temp = df.loc[tipo_index + 1:, 1].dropna().unique()
                     unique_values = [str(val).lower().strip() for val in unique_values_temp]
+
                 except (IndexError, KeyError):
                     print("⚠️ 'TIPO' marker not found in the Excel file. Processing may be incomplete.")
                     unique_values = []
@@ -997,7 +1013,8 @@ def main() -> None:
 
                 for value in unique_values:
                     try:
-                        grouped_df = df[df[1].str.lower().str.strip().str.contains(value, na=False)]
+                        clean_col = df[1].str.replace(r'\s+', ' ', regex=True).str.lower().str.strip()
+                        grouped_df = df[clean_col.str.contains(value, na=False)]
 
                         print(f"Executing for {value}\n"
                               f"Number of rows in grouped_df: {len(grouped_df)}"
@@ -1022,9 +1039,9 @@ def main() -> None:
                             for df_type, df in df_dict.items():
                                 if not df.empty:
                                     if df_type == 'BEM':
-                                        value = 'alimentacao'
+                                        value = 'agua'
                                     else:
-                                        value = 'Serviços'
+                                        value = 'alimentacao'
 
                                     try:
                                         robo.loop_de_pesquisa(df=df,

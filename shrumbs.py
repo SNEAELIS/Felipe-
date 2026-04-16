@@ -26,11 +26,14 @@ import sys
 import pandas as pd
 import io
 import os
+from openpyxl import load_workbook
+from openpyxl.styles import numbers
 
 r'''
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\chrome_profile" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9224 --user-data-dir="%USERPROFILE%\chrome_profile_2" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9226 --user-data-dir="%USERPROFILE%\chrome_profile_3" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
+
 '''
 
 
@@ -41,7 +44,6 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Users\felipe.rsouza\AppData\Local\P
 
 if __name__ == "__main__":
     func = int(input("Choose a function: "))
-
     # split the nucleai on the dir into subdirs
     if func == 2:
         def separate_nuclei():
@@ -319,6 +321,7 @@ if __name__ == "__main__":
                     r'Social\Teste001\Sofia\Pareceres_SEi')
         convert_all_html_files(root_directory=root_dir)
 
+
     # Split parecer
     elif func == 5:
         def split_parecer():
@@ -535,6 +538,7 @@ if __name__ == "__main__":
                     sys.exit(0)  # Exit gracefully
 
         main()
+
 
     # Check if directory is empty
     elif func == 8:
@@ -1870,6 +1874,7 @@ if __name__ == "__main__":
                             dpi=120,
                             quality=80)
 
+
     # PDF slicer
     elif func == 15:
         from  PyPDF2 import PdfReader, PdfWriter
@@ -1887,6 +1892,7 @@ if __name__ == "__main__":
 
             print(f"Last page extracted and saved to {out_file}")
         print(f"Total pages in original: {pages_len}")
+
 
     # Checks folder names with excel column
     elif func == 17:
@@ -1907,6 +1913,7 @@ if __name__ == "__main__":
         matches = [folder for folder in folder_names if folder in df_values]
 
         print(matches)
+
 
     # Text cleaner for monitor.py
     elif func == 18:
@@ -1957,6 +1964,7 @@ if __name__ == "__main__":
                          'GAB-CMOF']
 
         create_matrix(file_path_org, file_path_dst, unique_values, process_col='Processo')
+
 
     elif func == 19:
         def copy_style(source_cell, target_cell):
@@ -2034,6 +2042,7 @@ if __name__ == "__main__":
         # Remove microseconds for cleaner output
         elapsed_str = str(elapsed).split('.')[0]
         print(f"Save time: {elapsed_str}")
+
 
     # Test selectors
     elif func == 20:
@@ -2244,6 +2253,7 @@ if __name__ == "__main__":
         if __name__ == "__main__":
             main()
 
+
     # capture_position
     elif func == 21:
         def capture_position(element_name="element"):
@@ -2379,6 +2389,7 @@ if __name__ == "__main__":
 
         manual_sync_workflow(destiny_dir=dir_path)
 
+
     # better fake function
     elif func == 24:
         class BreakInnerLoop(Exception):
@@ -2390,7 +2401,7 @@ if __name__ == "__main__":
                 self.playwright = sync_playwright().start()
                 self.browser = self.playwright.chromium.connect_over_cdp(cdp_url)
                 self.context = self.browser.contexts[0] if self.browser.contexts else self.browser.new_context()
-                self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
+                self.page = self.context.pages[1] if self.context.pages else self.context.new_page()
 
                 # Enable resource blocking for faster performance
                 # self.block_rss()
@@ -2625,7 +2636,7 @@ if __name__ == "__main__":
                     for name in sheet_names_list:
                         print(f"- {name}")
 
-                    data_frame = complete_data_frame['Sheet1']
+                    data_frame = complete_data_frame['Limpa']
                     print(f"✅ Loaded {len(data_frame)} rows from Excel.")
                     return data_frame
 
@@ -2655,8 +2666,7 @@ if __name__ == "__main__":
 
 
         def main() -> None:
-            dir_path = (
-                r'C:\Users\felipe.rsouza\Documents\fake_func\Convênios - Pendências Celebração (24.11) - Copia.xlsx')
+            dir_path = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Propostas_Extraidas_filtradas.xlsx"
 
             try:
                 robo = PWRobo()
@@ -2673,7 +2683,7 @@ if __name__ == "__main__":
             robo.consulta_proposta()
 
             for idx, row in df.iterrows():
-                numero_processo_temp = row.iloc[4]
+                numero_processo_temp = row.iloc[0]
                 numero_processo = robo.fix_prop_num(numero_processo_temp)
 
                 if not numero_processo:
@@ -2707,41 +2717,221 @@ if __name__ == "__main__":
 
     # merge aba_dados resuolts databases
     elif func == 25:
-        df1 = pd.read_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\resultado_aba_dados_1-2.xlsx")
-        df2 = pd.read_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
-                            r"Social\Teste001\resultado_aba_dados_2-2.xlsx")
+        print('Mergin results from the "Aba Dados" scrape.')
+        df1 = pd.read_excel(
+            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\resultado_aba_dados_9222.xlsx")
+        df2 = pd.read_excel(
+            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\resultado_aba_dados_9224.xlsx")
+        df3 = pd.read_excel(
+            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\resultado_aba_dados_9226.xlsx")
+        df4 = pd.read_excel(
+            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\resultado_aba_dados_9228.xlsx")
 
         # Step 1: Merge the dataframes
-        merged_df = pd.concat([df1, df2], ignore_index=True)
+        merged_df = pd.concat([df1, df2, df3, df4], ignore_index=True)
+
+        # Store original data before any conversion
+        original_merged_df = merged_df.copy()
 
         # Step 3: Remove duplicate rows
         merged_df = merged_df.drop_duplicates()
+        original_merged_df = original_merged_df.drop_duplicates()
 
         # Step 4: Reset index (optional, but nice to have clean index)
         merged_df = merged_df.reset_index(drop=True)
+        original_merged_df = original_merged_df.reset_index(drop=True)
 
         # Display results
         print(f"Original df1: {len(df1)} rows")
         print(f"Original df2: {len(df2)} rows")
-        print(f"After merge: {len(df1) + len(df2)} rows")
+        print(f"Original df3: {len(df3)} rows")
+        print(f"Original df4: {len(df4)} rows")
+
+        print(f"After merge: {len(df1) + len(df2) + len(df3) + len(df4)} rows")
         print(f"After removing duplicates: {len(merged_df)} rows")
 
-        merged_df.to_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - webscraping\Resultado scraping Aba Dados\resultado_aba_dados.xlsx", index=False)
+        target_columns = [col for col in merged_df.columns if
+                          ('data' in col.lower() or 'dou' in col.lower()) and col != 'Data do Evento']
+
+        # For each target column, extract date and ensure DD/MM/YYYY format
+        for col in target_columns:
+            if col in merged_df.columns:
+                print(f"Processing column '{col}': Cleaning date format")
+                # Extract only the first date pattern (DD/MM/YYYY) from each cell
+                merged_df[col] = merged_df[col].astype(str).str.extract(r'(\d{2}/\d{2}/\d{4})')[0]
+                # Convert to datetime, then format to DD/MM/YYYY as string
+                merged_df[col] = pd.to_datetime(merged_df[col], format='%d/%m/%Y', errors='coerce').dt.strftime(
+                    '%d/%m/%Y')
+                print(f"  - Converted '{col}' to DD/MM/YYYY format")
+
+
+        # Convert date columns (explicit format for efficiency and to avoid warning)
+        for col in merged_df.columns:
+            if ('data' in col.lower() or 'dou' in col.lower()) and col != 'Data do Evento':
+                merged_df[col] = pd.to_datetime(merged_df[col], format='%d/%m/%Y', errors='coerce')
+                print(f"Converted column '{col}' to datetime")
+
+        file_path = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\webscraping\Resultado scraping Aba Dados\resultado_aba_dados.xlsx"
+
+        merged_df.to_excel(file_path, index=False)
+
+        time.sleep(0.7)
+        wb = load_workbook(file_path)
+        ws = wb.active
+
+        # Identify columns that contain datetime data
+        date_columns = merged_df.select_dtypes(include=['datetime64']).columns
+
+        for col_name in date_columns:
+            # Find the column index (1‑based) in the Excel sheet
+            col_idx = None
+            for idx, cell in enumerate(ws[1], start=1):
+                if cell.value == col_name:
+                    col_idx = idx
+                    break
+            if col_idx:
+                for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=col_idx, max_col=col_idx):
+                    for cell in row:
+                        # Apply the built‑in short date format (locale‑aware)
+                        cell.number_format = numbers.FORMAT_DATE_XLSX14
+
+        wb.save(file_path)
+
+        # COMPARATIVE FUNCTIONALITY: Read the saved file and compare just the dates
+        print("\n" + "=" * 60)
+        print("COMPARATIVE ANALYSIS: Checking Date Matching")
+        print("=" * 60)
+
+        # Read the saved Excel file
+        saved_df = pd.read_excel(file_path, dtype=str)
+
+        mismatched_rows = []
+
+        # Check if target column exists
+        for  target_column in target_columns:
+            print(f"\nAnalyzing column: '{target_column}'")
+            print("-" * 40)
+
+            saved_dates_clean = []
+            for val in saved_df[target_column]:
+                if pd.isna(val):
+                    saved_dates_clean.append(val)
+                else:
+                    # If value contains time (like "2025-11-24 00:00:00"), extract just the date
+                    if ' ' in str(val):
+                        date_part = str(val).split(' ')[0]
+                        # Convert to DD/MM/YYYY format for consistent comparison
+                        try:
+                            # Handle YYYY-MM-DD format
+                            if '-' in date_part:
+                                year, month, day = date_part.split('-')
+                                formatted_date = f"{day}/{month}/{year}"
+                                saved_dates_clean.append(formatted_date)
+                            else:
+                                saved_dates_clean.append(date_part)
+                        except:
+                            saved_dates_clean.append(str(val))
+                    else:
+                        # If no time, just ensure format is DD/MM/YYYY
+                        try:
+                            # Check if it's in YYYY-MM-DD format
+                            if '-' in str(val) and len(str(val)) == 10:
+                                year, month, day = str(val).split('-')
+                                formatted_date = f"{day}/{month}/{year}"
+                                saved_dates_clean.append(formatted_date)
+                            else:
+                                saved_dates_clean.append(str(val))
+                        except:
+                            saved_dates_clean.append(str(val))
+
+            # For each target column, strip time data (keep only DD/MM/YYYY)
+            for col in target_columns:
+                if col in original_merged_df.columns:
+                    # Convert to string, split by space, take first part (the date)
+                    original_merged_df[col] = original_merged_df[col].astype(str).str.split().str[0]
+                    print(f"Stripped time data from '{col}'")
+
+            # Original values are already in DD/MM/YYYY format (strings)
+            original_dates = original_merged_df[target_column].astype(str)
+
+            # Find rows where dates don't match
+            mismatched_rows = []
+            for idx, (orig_date, saved_date) in enumerate(zip(original_dates, saved_dates_clean)):
+                # Handle NaN/NaT values
+                if pd.isna(orig_date) or orig_date == 'NaT' or orig_date == 'nan':
+                    if pd.isna(saved_date) or saved_date == 'nan':
+                        continue
+                    else:
+                        mismatched_rows.append({
+                            'row': idx + 2,  # +2 for Excel row number (header + 0-index)
+                            'original_date': orig_date,
+                            'saved_date': saved_date,
+                            'issue': 'Missing value mismatch'
+                        })
+                elif pd.isna(saved_date) or saved_date == 'nan':
+                    mismatched_rows.append({
+                        'row': idx + 2,
+                        'original_date': orig_date,
+                        'saved_date': saved_date,
+                        'issue': 'Missing value mismatch'
+                    })
+                elif str(orig_date).strip() != str(saved_date).strip():
+                    mismatched_rows.append({
+                        'row': idx + 2,
+                        'original_date': orig_date,
+                        'saved_date': saved_date,
+                        'issue': 'Date mismatch'
+                    })
+
+            # Print results
+            if mismatched_rows:
+                print(f"\n⚠️  Found {len(mismatched_rows)} rows where dates do NOT match:")
+                print("\nDetailed list:")
+            else:
+                print(f"\n✓ All dates match! No mismatches found in column '{target_column}'")
+
+            # Summary statistics
+            print("\n" + "=" * 60)
+            print("SUMMARY")
+            print("=" * 60)
+            print(f"Total rows compared: {len(original_dates)}")
+            print(f"Matching rows: {len(original_dates) - len(mismatched_rows)}")
+            print(f"Mismatched rows: {len(mismatched_rows)}")
+
+            if mismatched_rows and len(mismatched_rows)<100:
+                print(f"\n⚠️  WARNING: {len(mismatched_rows)} rows have date mismatches!")
+                print("Check the rows listed above for discrepancies.")
+                for mismatch in mismatched_rows:
+                    print(f"  Row {mismatch['row']}: Original: {mismatch['original_date']} | Saved: {mismatch['saved_date']} | Issue: {mismatch['issue']}")
+            else:
+                print("\n✓ SUCCESS: All dates are consistent!")
+
+        else:
+            print(f"Available columns in original data: {list(original_merged_df.columns)}")
+            print(f"Available columns in saved data: {list(saved_df.columns)}")
+
+        print("\n✓ Comparative analysis completed!")
 
 
     # merges processos sei databases
     elif func == 26:
-        df1 = pd.read_excel(
-        r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - "
-        r"webscraping\Consulta_SEi\Consultas parciais\consulta_direcao_sei_1-2.xlsx")
-        df2 = pd.read_excel(
-            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - "
-            r"webscraping\Consulta_SEi\Consultas parciais\consulta_direcao_sei_2-2.xlsx")
+        print('Merging SEi dataframes')
 
         pattern = r'^([a-z]+\.[a-z]+)'
 
+        df_s = []
+
+        for quarter in range(1, 5):
+            # arquivo_destino = fr"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - webscraping\Consulta_SEi\Consultas parciais\consulta_direcao_sei_{quarter}-4.xlsx"
+
+            arquivo_destino = fr"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Processo_SEi\_consulta_direcao_sei_{quarter}-4.xlsx"
+
+            df_s.append(pd.read_excel(arquivo_destino))
+
+        df1, df2, df3, df4 = df_s
+
         # Step 1: Merge the dataframes
-        merged_df = pd.concat([df1, df2], ignore_index=True)
+        merged_df = pd.concat([df1, df2, df3, df4], ignore_index=True)
 
         # Step 2: Remove rows that contain a period (".") in any cell
         specific_column = 'texto_link'
@@ -2760,12 +2950,18 @@ if __name__ == "__main__":
         # Step 5: Reset index (optional, but nice to have clean index)
         merged_df = merged_df.reset_index(drop=True)
 
-        merged_df.to_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
-                           r"Social\SNEAELIS - webscraping\Consulta_SEi\consulta_direcao_sei_final.xlsx")
+        merged_df.to_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\webscraping\Consulta_SEi\consulta_direcao_sei_final.xlsx")
+
+        # merged_df.to_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Processo_SEi\consulta_direcao_sei_final.xlsx")
+
+
+
         # Display results
         print(f"Original df1: {len(df1)} rows")
         print(f"Original df2: {len(df2)} rows")
-        print(f"After merge: {len(df1) + len(df2)} rows")
+        print(f"Original df1: {len(df3)} rows")
+        print(f"Original df2: {len(df4)} rows")
+        print(f"After merge: {len(df1) + len(df2) + len(df3) + len(df4)} rows")
 
         # Count rows with periods
         rows_with_period = matches_pattern_mask.sum()
@@ -2773,4 +2969,5 @@ if __name__ == "__main__":
         print(f"After removing pattern rows: {len(merged_df)} rows")
         print(f"After removing empty rows: {len(merged_df)} rows")
         print(f"After removing duplicates: {len(merged_df)} rows")
+
 

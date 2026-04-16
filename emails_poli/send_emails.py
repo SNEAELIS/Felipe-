@@ -121,7 +121,8 @@ def send_emails_from_excel(excel_path, attachment_path=None, sender=None):
             # Move from Drafts to Outbox and send
             try:
                 # This sometimes bypasses security
-                e_mail.Send()
+                e_mail.Display()
+                sys.exit()
                 time.sleep(1.5)
                 return print(f"📧📤 Email sent to: {email}")
 
