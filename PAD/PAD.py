@@ -48,8 +48,7 @@ class Robo:
             # Inicia as opções do Chrome
             self.chrome_options = webdriver.ChromeOptions()
             # Endereço de depuração para conexão com o Chrome
-            self.chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222"
-                                                                           "")
+            self.chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
             # Garante que nenhuma "Tab Search" seja aberta ao iniciar
             self.chrome_options.add_argument('--disable-features=TabSearch')
             self.chrome_options.add_argument('--disable-component-extensions-with-background-pages')
@@ -109,14 +108,14 @@ class Robo:
 
     def skip_chrome_tab_search(self):
         qnt_abas = self.driver.window_handles
-        abas_limpas = qnt_abas
+        abas_limpas = []
         for handle in qnt_abas:
             self.driver.switch_to.window(handle)
             url = self.driver.current_url
-            if "chrome" in url:
-                abas_limpas.remove(handle)
-
+            if "chrome" not in url and 'omnibox' not in url:
+                abas_limpas.append(handle)
         return  abas_limpas
+
 
     # Navega até a página de busca da proposta
     def consulta_proposta(self):
