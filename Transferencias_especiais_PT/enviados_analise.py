@@ -29,7 +29,7 @@ def conectar_navegador_existente():
         # Inicia as opções do Chrome
         chrome_options = webdriver.ChromeOptions()
         # Endereço de depuração para conexão com o Chromea
-        chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
+        chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9224")
         # Inicializa o driver do Chrome com as opções e o gerenciador de drivers
         driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
@@ -566,7 +566,7 @@ def main(xlsx_path):
 
 
 
-def send_emails_from_excel(excel_path,):
+def send_emails_from_excel(excel_path):
     """
     Prepares emails from Excel data (Columns A, B, C) and opens them in Outlook for review.
 
@@ -576,7 +576,7 @@ def send_emails_from_excel(excel_path,):
         sender (str, optional): Email sender address.
     """
 
-    def prepare_outlook_email(email, subject, html_body):
+    def prepare_outlook_email(email:str, subject:str, html_body:str, attachment_paths:str):
         """Creates and displays an Outlook email (without sending)."""
         try:
             if not all(isinstance(x, str) for x in [email, subject, html_body]):
@@ -589,6 +589,17 @@ def send_emails_from_excel(excel_path,):
             e_mail.To = email
             e_mail.Subject = subject
             e_mail.HTMLBody = html_body
+
+            if attachment_paths:
+                # Convert single string to list for uniform handling
+                if isinstance(attachment_paths, str):
+                    attachment_paths = [attachment_paths]
+                for path in attachment_paths:
+                    if os.path.exists(path):
+                        e_mail.Attachments.Add(path)
+                        print(f"📎 Attached: {os.path.basename(path)}")
+                    else:
+                        print(f"⚠️ Attachment not found: {path}")
 
             e_mail.Display()  # Opens email for review (instead of .Send())
             print(f"📧 Email prepared for: {email}")
@@ -679,7 +690,7 @@ def send_emails_from_excel(excel_path,):
         if email or extra_data_list:
         # Prepare emails
             html_body, subject = generate_email_body(extra_data_list)  # Pass single entry
-            prepare_outlook_email(email, subject, html_body)
+            prepare_outlook_email(email=email,subject=subject,html_body=html_body,attachment_paths=excel_path)
     except Exception as e:
         exc_type, exc_value, exc_tb = sys.exc_info()
         print(f"Error occurred at line: {exc_tb.tb_lineno}")
@@ -688,7 +699,7 @@ def send_emails_from_excel(excel_path,):
 
 if __name__ == "__main__":
     xlsx_paths = [
-        r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Transferencias_Especiais\Conferência Robô - 16abr.xlsx"
+        r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Transferencias_Especiais\Conferência robô 30abr MANHA.xlsx"
     ]
 
     for idx, path in enumerate(xlsx_paths):

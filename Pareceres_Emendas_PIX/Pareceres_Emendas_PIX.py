@@ -1,6 +1,10 @@
+import time
+import os
 import sys
+import re
 
-from webdriver_manager.chrome import ChromeDriverManager
+import pandas as pd
+
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -9,9 +13,9 @@ from selenium.common.exceptions import (TimeoutException, NoSuchElementException
                                         ElementClickInterceptedException, WebDriverException,
                                         StaleElementReferenceException)
 from selenium.webdriver.chrome.service import Service
-import pandas as pd
-import time
-import os
+
+from webdriver_manager.chrome import ChromeDriverManager
+
 
 
 # Função para conectar ao navegador já aberto
@@ -25,13 +29,15 @@ def conectar_navegador_existente():
         # Inicia as opções do Chrome
         chrome_options = webdriver.ChromeOptions()
         # Endereço de depuração para conexão com o Chrome
-        chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
+        chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9224")
         # Inicializa o driver do Chrome com as opções e o gerenciador de drivers
         driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
             options=chrome_options)
 
-        print("✅ Conectado ao navegador existente com sucesso.")
+        skip_chrome_tab_search(driver=driver)
+
+        print(f"✅ Conectado ao navegador existente com sucesso. URL {driver.current_url}")
 
         reset_web_page(driver=driver)
 
@@ -39,6 +45,66 @@ def conectar_navegador_existente():
     except WebDriverException as e:
         # Imprime mensagem de erro se a conexão falhar
         print(f"❌ Erro ao conectar ao navegador existente: {e}")
+
+
+# Função para tirar da lista as "abas" do chrome que não são visiveis
+def skip_chrome_tab_search(driver):
+    try:
+        qnt_abas = driver.window_handles
+        print(len(qnt_abas))
+        abas_uteis = []
+
+        for handle in qnt_abas:
+            try:
+                # Add a small timeout for switching tabs
+                driver.set_page_load_timeout(30)
+                driver.switch_to.window(handle)
+
+                # Try to get URL with fallback
+                try:
+                    url = driver.current_url
+                except (TimeoutException, WebDriverException):
+                    # If we can't get URL, try execute_script as alternative
+                    try:
+                        url = driver.execute_script("return window.location.href;")
+                    except:
+                        url = "unknown"
+
+                print(f"Tab URL: {url}")
+
+                # Skip chrome:// and chrome-extension:// URLs
+                if "chrome" not in url.lower():
+                    abas_uteis.append(handle)
+
+            except TimeoutException:
+                print(f"⚠️ Timeout on tab, skipping...")
+                continue
+            except WebDriverException as e:
+                print(f"⚠️ WebDriver error on tab: {type(e).__name__}")
+                continue
+            except Exception as e:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                print(f"⚠️ Unexpected error on tab: {type(e).__name__}.\n Erro {str(e)[:150]}")
+                continue
+
+        # Reset timeout to default (optional)
+        driver.set_page_load_timeout(30)
+
+        if abas_uteis:
+            driver.switch_to.window(abas_uteis[0])
+
+        else:
+            print("❌ No valid tabs found!")
+            driver.switch_to.window(qnt_abas[0])  # Fallback to first tab
+            sys.exit(0)
+        return abas_uteis
+
+    except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f"❌ Erro ao excluir abas invisíveis do chrome: {type(e).__name__}.\n Erro {str(e)[:150]}")
+        sys.exit()
 
 
 # Reset the page to start the iteration process
@@ -330,9 +396,11 @@ def loop_segunda_pagina(driver, source_dir: str, num_parecer: str, codigo: str, 
                 ):
             return True
 
-        return False
+        sys.exit()
 
     except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         print(f'⚠️ Falha fatal {type(e).__name__} ao anexar arquivo na aba de análise.\nErro{str(e)[:100]}\n')
         discard = discar_butn(driver)
         if discard:
@@ -382,10 +450,17 @@ def anexar_parecer(driver, path_list: list, source_dir: str, texto_desc_arq: str
         return True
 
     except TimeoutException or NoSuchElementException or StaleElementReferenceException as erro:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         print(f"❌ Erro ao enviar arquivos: {erro[:80]}")
+        sys.exit()
+
     except Exception as erro:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         print(f"❌ Erro fatal ao enviar arquivos: {type(erro).__name__}\n{erro[:80]}")
-        return False
+        sys.exit()
+
 
 # saves the proposal that promped a pop-up due to it been already filled
 def save_prop_with_pop(file_path, codigo):
@@ -398,23 +473,30 @@ def save_prop_with_pop(file_path, codigo):
             num_parecer: Value to match in Column A (case sensitive)
         """
     # Read the Excel file
-    df = pd.read_excel(file_path)
+    df = pd.read_excel(file_path, dtype=str)
     # Find exact matches in Column A
     col_a = df.iloc[: , 0]
     match_loc = col_a[col_a == codigo]
     # Write to Column C in matching rows
-    if not match_loc.empy:
-        row_idx = match_loc.index
-        # Write data to Column C (index 2) in these rows
-        df.iloc[row_idx, 2] = 'Feito'
-        # Save back to Excel
-        df.to_excel(file_path, index=False, dtype=str)
-        print(f"Successfully wrote to row: {row_idx+2}")
+    try:
+        if not match_loc.empty:
+            row_idx = match_loc.index
+            # Write data to Column C (index 2) in these rows
+            df.iloc[row_idx, 2] = 'Feito'
+            # Save back to Excel
+            df.to_excel(file_path, index=False)
+            print(f"Successfully wrote to row: {row_idx+2}")
 
-        return True
-    else:
-        print("No matches found in Column A")
-        return False
+            return True
+        else:
+            print("No matches found in Column A")
+            return False
+    except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        last_error = truncate_error(f"Element intercepted: {str(e)}")
+        print(f'{type(e).__name__}')
+        print(f"❌ {last_error}")
 
 
 def select_files_by_suffix(source_dir, num_parecer):
@@ -432,8 +514,12 @@ def select_files_by_suffix(source_dir, num_parecer):
                 if not os.path.isfile(full_path):
                     continue
                 base = os.path.splitext(filename)[0]
-                sub_parts = base.split(' ')[-1]
+                match_ = re.search(r'-(\d+)_', base)
+                sub_parts = ''
+                if match_:
+                    sub_parts = match_.group(1)
                 if sub_parts == num_parecer:
+                    print('File found !')
                     return full_path  # Return immediately on first match
     except Exception as erro:
         print(f"❌ Erro fatal ao buscar anexo: {type(erro).__name__}\n{erro[:80]}")
@@ -444,11 +530,9 @@ def select_files_by_suffix(source_dir, num_parecer):
 def main():
     driver = conectar_navegador_existente()
 
-    planilha_final = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-               r'Social\Teste001\Sofia\Pareceres_SEi\Pareceres de Aprovações 2025.xlsx')
+    planilha_final = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Transferencias_Especiais\pareceres\Envio pareceres aprovação 29abr tarde.xlsx"
 
-    source_dir = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                  r'Social\Teste001\Sofia\Pareceres_SEi')
+    source_dir = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Transferencias_Especiais\pareceres\SEI_71000.023389_2026_57 (5)"
 
     try:
         df = pd.read_excel(planilha_final, dtype=str)
@@ -474,8 +558,14 @@ def main():
             if not pd.isna(row["Já Feito"]):
                 print(f'📝⏭️ Proposta com parecer enviado. Pulando linha {index}...')
                 continue
+
+            #### Seleciona a coluna pelo cabeçalho ####
             codigo = str(row["PLANOS DE AÇÃO APROVADOS"])  # Garante que o código seja string
-            num_parecer = str(row["Parecer"]).strip()  # Garante que o código seja string
+            num_parecer_raw = str(row["Parecer"]).strip()  # Garante que o código seja string
+            match_num_parecer = re.search(r'\((?:.*?)(\d+)\)', num_parecer_raw)
+
+            if match_num_parecer:
+                num_parecer = match_num_parecer.group(1)
 
             print(f"\n⚙️ Processando código: {codigo} (índice: {index})\n")
 
@@ -564,6 +654,7 @@ def main():
                                        num_parecer=num_parecer,
                                        codigo=codigo,
                                        file_path=planilha_final):
+
                     save_prop_with_pop(file_path= planilha_final, codigo=codigo)
                 # Sobe para o topo da página
                 driver.execute_script("window.scrollTo(0, 0);")
@@ -573,9 +664,9 @@ def main():
                                 "/div[1]/br-breadcrumbs/div/ul/li[2]/a")
 
             except Exception as erro:
-                last_error = truncate_error(f"Main loop element intercepted: {str(erro)}",
-                                            150)
-                print(f"⚠️ {last_error}")
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"Error occurred at line: {exc_tb.tb_lineno}")
+                print(f"⚠️ Main loop element intercepted: Error:{type(erro).__name__}\nError description: {str(erro)[:150]} ")
 
                 try:
                     clicar_elemento(driver, "/html/body/transferencia-especial-root/br-main-layout/"
@@ -600,6 +691,8 @@ def main():
         print(f"✅ Todos os pareceres foram enviados com sucesso")
 
     except Exception as erro:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
         last_error = truncate_error(f"Element intercepted: {str(erro)}")
         print(f"❌ {last_error}")
         print(f'{type(erro).__name__}')
@@ -609,3 +702,11 @@ if __name__ == "__main__":
     main()
 
 
+'''
+modified:   DATA/Acompanhamento/Controle SNEAELIS - 2026.xlsx
+        modified:   DATA/TGov/Aba Dados/resultado_aba_dados.xlsx
+        modified:   DATA/TGov/Requisitos/Consolidado_Geral.xlsx
+        modified:   DATA/TGov/SEI/consulta_direcao_sei_final.xlsx
+        modified:   DATA/TGov/TAs/Relatorio_Progresso_Vigencias.xlsx
+
+'''

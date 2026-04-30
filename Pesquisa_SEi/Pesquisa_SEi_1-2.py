@@ -19,18 +19,6 @@ from selenium.webdriver.support import expected_conditions as EC
 from bs4 import BeautifulSoup
 
 
-# --- Função de log ---
-def registrar_log(mensagem: str):
-    timestamp = datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
-    with open("log.txt", "a", encoding="utf-8") as log_file:
-        log_file.write(f"{timestamp} {mensagem}\n")
-
-
-# --- Função resetar log ---
-def resetar_log():
-    with open("log.txt", "w", encoding="utf-8") as log_file:
-        log_file.write("")
-
 # --- Garante que o navegador esteja na aba correta e conectardo ao sei ---
 def switch_to_sei(driver):
     target_url = "sei.mds.gov"
@@ -78,13 +66,11 @@ def conectar_navegador_existente(porta: int):
         print("Current URL:", navegador.current_url)
 
         print("✅ Conectado ao navegador existente com sucesso!")
-        registrar_log("Conectado ao navegador com sucesso.")
         return navegador
     except WebDriverException as webe:
         msg = "Erro ao conectar. Verifique se o Chrome está aberto com depuração."
         print("❌", msg)
         print(f'{type(webe).__name__}\n\n{str(webe)[:100]}')
-        registrar_log(f"ERRO: {msg}")
         return None
 
 
@@ -124,7 +110,6 @@ def ler_processos_validos(caminho_excel: str, nome_coluna: str = "processo") -> 
     processos_filtrados = [proc for proc in processos_validos if padrao.match(proc)]
     processos_filtrados.sort()
     print(f"🔍 Total de processos válidos encontrados: {len(processos_filtrados)}")
-    registrar_log(f"{len(processos_filtrados)} processos válidos encontrados.")
 
     return processos_filtrados
 
@@ -143,7 +128,6 @@ def extrair_links_processo(navegador, numero_processo):
 
     try:
         msg_inicio = f"Iniciando scraping do processo: {numero_processo}"
-        registrar_log(msg_inicio)
         print(f"🔄 {msg_inicio}")
 
         navegador.switch_to.default_content()
@@ -231,7 +215,7 @@ def extrair_links_processo(navegador, numero_processo):
             return resultados
 
         except Exception as e:
-            registrar_log(f"❌ Erro crítico ao extrair links do processo {numero_processo}.\nErr:"
+            print(f"❌ Erro crítico ao extrair links do processo {numero_processo}.\nErr:"
                           f"{type(e).__name__}.\nMSG: {str(e)[:100]}")
             return []
 
@@ -245,7 +229,6 @@ def extrair_links_processo(navegador, numero_processo):
         exc_type, exc_value, exc_tb = sys.exc_info()
         print(f"❌Error occurred at line: {exc_tb.tb_lineno}")
         print(f"{msg}: {type(e).__name__} - {str(e)[:100]}")
-        registrar_log(msg)
         navegador.switch_to.default_content()
 
         return [{
@@ -445,8 +428,6 @@ def executar_scraping():
             f"\n{indice} {'>' * 10} Porcentagem concluída:"
             f" {(indice / max_linha) * 100:.2f}% | ETA: {eta_minutes:02d}:{eta_secs:02d}\n")
 
-    resetar_log()
-
     arquivo_fonte = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
                      r"Social\Teste001\propostas_SEi.xlsx")
 
@@ -461,7 +442,6 @@ def executar_scraping():
     if reset_df == 'Y':
         delete_destiny_data(arquivo_destino)
 
-    registrar_log("=== INÍCIO DA EXECUÇÃO ===")
 
     other_door = input('Enter the door you are using:\n If you are using 9222, just type enter.  ')
 
@@ -470,9 +450,6 @@ def executar_scraping():
     else:
         navegador = conectar_navegador_existente()
 
-    if not navegador:
-        registrar_log("Execução abortada: navegador não conectado.")
-        return
 
 
     processos_todos = ler_processos_validos(arquivo_fonte) # Is a list
@@ -547,9 +524,6 @@ def executar_scraping():
         (df_final['texto_link'] == phrase)
         ]
     append_to_excel_safe(df_cleaned, arquivo_destino, make_backup=True)
-
-    registrar_log("✅ Execução finalizada com sucesso.")
-    registrar_log("=== FIM DA EXECUÇÃO ===\n")
 
 
 # --- Execução ---
