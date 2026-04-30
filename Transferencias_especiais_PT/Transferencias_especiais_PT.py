@@ -1,6 +1,11 @@
 import time
 import sys
+import os
+import win32com.client as win32
+
 import pandas as pd
+
+from datetime import datetime
 
 from pathlib import Path
 
@@ -24,7 +29,7 @@ def conectar_navegador_existente():
         # Inicia as opções do Chrome
         chrome_options = webdriver.ChromeOptions()
         # Endereço de depuração para conexão com o Chrome
-        chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
+        chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9224")
         # Inicializa o driver do Chrome com as opções e o gerenciador de drivers
         driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
@@ -433,6 +438,7 @@ def remover_backdrop(driver):
 def skip_chrome_tab_search(driver):
     try:
         qnt_abas = driver.window_handles
+        print(len(qnt_abas))
         abas_uteis = []
 
         for handle in qnt_abas:
@@ -454,7 +460,7 @@ def skip_chrome_tab_search(driver):
                 print(f"Tab URL: {url}")
 
                 # Skip chrome:// and chrome-extension:// URLs
-                if url and "chrome" not in url.lower():
+                if "chrome" not in url.lower():
                     abas_uteis.append(handle)
 
             except TimeoutException:
@@ -474,10 +480,11 @@ def skip_chrome_tab_search(driver):
 
         if abas_uteis:
             driver.switch_to.window(abas_uteis[0])
+
         else:
             print("❌ No valid tabs found!")
             driver.switch_to.window(qnt_abas[0])  # Fallback to first tab
-
+            sys.exit(0)
         return abas_uteis
 
     except Exception as e:
@@ -1319,7 +1326,7 @@ def coletar_dados_listas(driver, tabela_xpath, index, df, df_path):
                     print(f"⚠️ Dados não encontrados: {type(e).__name__} - {truncate_error(str(e))}")
 
                 # Get Lista de Conselhos locais ou instâncias de controle social notifications
-                social_control = extract_social_control_data()
+                social_control = ['', '', '']#extract_social_control_data()
 
                 # Get metas
                 try:
@@ -1712,6 +1719,98 @@ def align_meta_and_fields_with_next_custeio(filename:str, output_filename:str=No
     # Save the aligned DataFrame
     df.to_excel(output_filename, index=False)
     print(f"Aligned file saved as: {output_filename}")
+    return output_filename
+
+
+def send_emails_from_excel(excel_path):
+    """
+    Sends Excel file as attachment via Outlook with minimal message text.
+
+    Args:
+        excel_path (str): Path to Excel file.
+    """
+
+    def send_outlook_email_with_attachment(email: str, subject: str, html_body: str, attachment_paths:str):
+        """Creates and sends an Outlook email with attachment."""
+        try:
+            if not all(isinstance(x, str) for x in [email, subject, html_body]):
+                raise TypeError("Recipient, subject, and body must be strings")
+
+            outlook = win32.Dispatch('outlook.application')
+            time.sleep(2)
+            e_mail = outlook.CreateItem(0)
+
+            e_mail.To = email
+            e_mail.Subject = subject
+            e_mail.HTMLBody = html_body
+            print(type(attachment_paths))
+
+            if attachment_paths:
+                attachment_paths = str(attachment_paths)  # Convert to string if needed
+                if os.path.exists(attachment_paths):
+                    e_mail.Attachments.Add(attachment_paths)
+                    print(f"📎 Attached: {os.path.basename(attachment_paths)}")
+                else:
+                    print(f"⚠️ Attachment not found: {attachment_paths}")
+
+            e_mail.Display()  # Send the email automatically
+            print(f"✅ Email sent to: {email}")
+            return True
+
+        except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error occurred at line: {exc_tb.tb_lineno}")
+            print(f"❌ Failed to send email to {email}: \n{e}")
+            return False
+
+    def generate_minimal_body():
+        """Generates minimal HTML body in Portuguese."""
+        today = datetime.now().strftime("%d/%m/%Y")
+        filename = os.path.basename(excel_path)
+
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+        </head>
+        <body style="font-family: Arial, sans-serif;">
+            <p>Prezados,</p>
+            <p>Segue em anexo o arquivo <strong>{filename}</strong> com os resultados da coleta de dados de hoje ({today}).</p>
+            <p>Atenciosamente,</p>
+        </body>
+        </html>
+        """
+
+        subject = f"Resultados da coleta de dados - {today}"
+        return html_body, subject
+
+    def read_recipient_from_excel():
+        return "maria.dourado@esporte.gov.br"
+
+    # Get recipient email
+
+    recipient_email = read_recipient_from_excel()
+
+    try:
+        if recipient_email:
+            # Generate minimal email content
+            html_body, subject = generate_minimal_body()
+
+            # Send email with attachment
+            send_outlook_email_with_attachment(
+                email=recipient_email,
+                subject=subject,
+                html_body=html_body,
+                attachment_paths=excel_path
+            )
+        else:
+            print("❌ No recipient email found. Cannot send email.")
+
+    except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error occurred at line: {exc_tb.tb_lineno}")
+        print(f"❌ Failed to process: {type(e).__name__}: \n{str(e)[:100]}")
 
 
 # Função principal
@@ -1952,7 +2051,8 @@ def main():
                 continue
 
         print("✅ Todos os dados foram coletados e salvos na planilha!")
-        align_meta_and_fields_with_next_custeio(filename=planilha_final)
+        aligned_xlsx_path = align_meta_and_fields_with_next_custeio(filename=planilha_final)
+        send_emails_from_excel(aligned_xlsx_path)
         driver.quit()
     except Exception as erro:
         exc_type, exc_value, exc_tb = sys.exc_info()
