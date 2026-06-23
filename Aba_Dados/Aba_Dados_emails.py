@@ -3,13 +3,15 @@ import time
 import re
 import sys
 import asyncio
+import aiofiles
+import nest_asyncio
+
+import pandas as pd
+
+from typing import Union
 from datetime import timedelta
 from typing import List, Dict, Optional, Any
 from contextlib import asynccontextmanager
-
-import pandas as pd
-import aiofiles
-import nest_asyncio
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 from playwright.async_api import async_playwright, Page, Browser, Locator
@@ -17,6 +19,9 @@ from playwright.async_api import async_playwright, Page, Browser, Locator
 from colorama import Fore, Style
 from tqdm.asyncio import tqdm
 from tqdm import tqdm as sync_tqdm
+
+
+os.system('cls' if os.name == 'nt' else 'clear')
 
 # Apply nest_asyncio to allow nested event loops (useful for Jupyter notebooks)
 nest_asyncio.apply()
@@ -106,7 +111,7 @@ class AsyncPWRobo:
                         continue
 
             # Enable resource blocking
-            await self.block_rss()
+            #await self.block_rss()
 
             # Start save worker
             self.save_task = asyncio.create_task(self._save_worker())
@@ -205,27 +210,37 @@ class AsyncPWRobo:
     async def dados_proposta(self, tr: Locator) -> Optional[Dict[str, str]]:
         """Extract data from table row"""
         try:
-            arvore_element = tr.locator('td.arvoreValores.arvoreExibe')
-
-            # Extract tree values if present
-            if await arvore_element.count() > 0:
-                print(f"📊 Accessing value tree on port {self.porta}")
-                all_text = await arvore_element.first.inner_text()
-                lines = [line.strip() for line in all_text.split('\n') if line.strip()]
-
-                result = {}
-                for line in lines:
-                    parts = line.split(maxsplit=2)
-                    if len(parts) >= 3:
-                        result[parts[2]] = ' '.join(parts[0:2])
-                return result
-
-            # Regular table data
-            labels = await tr.locator('td.label').all_text_contents()
-            fields = await tr.locator('td.field').all_text_contents()
-
-            return {str(label).strip(): str(field).strip()
-                    for label, field in zip(labels, fields) if label.strip()}
+            await self.page.locator('.form-group').first.wait_for(state="visible")
+            form_groups = await self.page.locator('.form-group').all()
+            if len(form_groups) == 0:
+                sys.exit()
+            print(f"\n🔍 Port {self.porta}: Found {len(form_groups)} form groups for data extraction\n")
+            
+            data = {}
+            for group in form_groups:
+                # Get the label text (column name)
+                label_elem = group.locator('label').first
+                if await label_elem.count():
+                    # Clean up label text - remove colon and extra spaces
+                    label_text = await label_elem.inner_text()
+                    label_text = label_text.strip().replace(':', '')
+                    
+                    # Get the value from span
+                    span_elem =  group.locator('span').first
+                    if await span_elem.count():
+                        # Check if span contains a list (ul/li)
+                        if  await span_elem.locator('ul').count():
+                            # Extract all list items
+                            items =  await span_elem.locator('li').all_text_contents()
+                            # Filter out empty items and join
+                            value = ' | '.join([item.strip() for item in items if item.strip()])
+                        else:
+                            value = await span_elem.inner_text()
+                            value = value.strip()
+                        data[label_text] = value
+                        
+            await self.page.locator('xpath=//*[@id="lnkConsultaAnterior"]').click()
+            return data
 
         except Exception as e:
             exc_type, exc_value, exc_tb = sys.exc_info()
@@ -275,10 +290,9 @@ class AsyncPWRobo:
         """Queue data for saving"""
         await self.save_queue.put("SAVE")
 
-    async def mark_as_done(self, raw_data: List[Optional[Dict]], numero_processo: str):
+    async def mark_as_done(self, raw_data: Union[Dict, List[Optional[Dict]]], numero_processo: str):
         """Safely mark row as done in the DataFrame"""
-
-        def merge_data(raw_data: List[Optional[Dict]]) -> Dict:
+        def merge_data(raw_data: Union[Dict, List[Optional[Dict]]]) -> Dict:
             """Merge partial dictionaries into complete records"""
             final_record = {}
 
@@ -305,7 +319,10 @@ class AsyncPWRobo:
                 return re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F]', '', txt)
             return str(txt) if txt is not None else ""
 
-        row_data = merge_data(raw_data)
+        row_data = {}
+
+        if isinstance(raw_data, Dict):
+            row_data = merge_data([raw_data])
         row_data = {k: sanitize_txt(v) for k, v in row_data.items()}
 
         try:
@@ -345,21 +362,36 @@ class AsyncPWRobo:
         """Main research loop for a single process"""
         print(f'🔍 Starting extraction for {numero_processo} on port {self.porta}')
 
-        xpath = '//*[@id="alterar"]/div/form/table'
+        xpath = 'xpath=//*[@id="divConteudoAbasDetalhes"]'
 
         try:
             await self.campo_pesquisa(numero_processo=numero_processo)
-            await self.page.locator(xpath).wait_for(state='visible')
 
-            rows = await self.page.locator(xpath).locator('tr').all()
-            raw_row_data = []
+            # Click on detalhar link
+            detail_btn_xpath = 'xpath=//*[@id="form_submit"]'
+            await self.page.locator(detail_btn_xpath).first.wait_for(state="visible")
+            detail_btn = await self.page.locator(detail_btn_xpath).all()
 
-            for row in rows:
-                row_data = await self.dados_proposta(row)
-                if row_data:
-                    raw_row_data.append(row_data)
+            idx_num = int()
+            for i, btn in enumerate(detail_btn):
+                try:
+                    # Check if element is visible
+                    is_visible = await btn.is_visible()
+                    
+                    # Get element name if exists
+                    name = await btn.get_attribute('name')
+                    if name == 'editarDadosPropostaDetalharPropostaDetalharProponenteForm':
+                        idx_num = i
+                        break
+                except Exception as e:
+                    print(f"Element [{i}] - Error getting info: {str(e)[:100]}")
+            await detail_btn[idx_num].click()
 
+            # Extract data from the page
+            raw_row_data = await self.dados_proposta(self.page.locator(xpath))
+            # Saves progress in the DataFrame and Excel
             await self.mark_as_done(numero_processo=numero_processo, raw_data=raw_row_data)
+            # Click on "Voltar" link to return to search results
             await self.page.locator('xpath=//*[@id="breadcrumbs"]/a[2]').click()
 
             print(f"{'✨' * 3}📦 Data collected for {numero_processo} on port {self.porta} {'✨' * 3}")
@@ -487,13 +519,19 @@ class AsyncScraperManager:
                 numero_processo = robo.fix_prop_num(item)
 
                 if not numero_processo:
+                    print(f"⚠️ Port {robo.porta}: Invalid proposal format skipped: {item}")
                     continue
 
                 try:
                     await robo.loop_de_pesquisa(numero_processo=numero_processo)
                 except BreakInnerLoop:
+                    print(f"⚠️ Port {robo.porta}: Skipping proposal {numero_processo} and continuing with next item")
                     await robo.save_data()
-                    break
+                    continue
+                except Exception as exc:
+                    print(f"❌ Port {robo.porta}: Unexpected error for {numero_processo}: {type(exc).__name__} {str(exc)[:120]}")
+                    await robo.save_data()
+                    continue
 
             await robo.save_data()
 
@@ -509,9 +547,22 @@ class AsyncScraperManager:
 
 
 def get_number_part(proposal: str) -> str:
-    """Extract the number before the slash and remove leading zeros"""
+    """Normalize proposal numbers for comparison.
+
+    Converts numbers like '13256/2024' and '013256/2024' into a consistent
+    zero-padded format and preserves the year portion.
+    """
+    if pd.isna(proposal):
+        return ""
+
+    proposal = str(proposal).strip()
+    if '_' in proposal and '/' in proposal:
+        proposal = proposal.replace('_', '/')
+
     if '/' in proposal:
-        return proposal.split('/')[0].lstrip('0') or '0'
+        left, right = proposal.split('/', 1)
+        return f"{left.zfill(6)}/{right.strip()}"
+
     return proposal.lstrip('0') or '0'
 
 
@@ -521,13 +572,12 @@ async def main_async():
     # Configuration
     arquivo_fonte = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Propostas_Extraidas_filtradas.xlsx"
 
-    arquivo_saida_base = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
-                          r"Social\Teste001\resultado_aba_dados.xlsx")
+    arquivo_saida_base = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Aba_Dados\emails\resultado_aba_dados.xlsx")
 
     # Ports to use (make sure Chrome is running with these debugging ports)
     portas = [9222, 9224, 9226, 9228]  # Add your ports here
 
-    reset = input('Do you want to reset all files?')
+    reset = 'n' #input('Do you want to reset all files?')
     if reset.lower() == 'y':
         for porta in portas:
             path = arquivo_saida_base.replace('.xlsx', f'_{porta}.xlsx')
@@ -549,8 +599,6 @@ async def main_async():
         return
     print(f"\n📊 Total proposals to process: {len(df)}")
 
-    # SPLIT THE DATAFRAME INTO 4 EQUAL PARTS
-    chunk_size = len(df) // len(portas)
     chunks = []
 
     for i, porta in enumerate(portas):
@@ -574,19 +622,14 @@ async def main_async():
 
             # Find completed programs (with Valor Global filled)
             if 'Valor Global' in df_existing.columns and 'Número da Proposta' in df_existing.columns:
-                finished_programs = df_existing[
-                    df_existing['Valor Global'].notna() &
-                    (df_existing['Valor Global'] != '')
-                    ]
-
                 # Get list of completed proposal numbers
-                to_jump = finished_programs['Número da Proposta'].tolist()
+                to_jump = df_existing['Número da Proposta'].tolist()
 
                 if to_jump:
                     print(f"✅ Port {porta}: Found {len(to_jump)} already completed proposals")
 
-                    # Extract number parts for comparison
-                    finished_numbers = {get_number_part(p) for p in to_jump if len(p.split('/')) <= 6}
+                    # Normalize proposal numbers for comparison
+                    finished_numbers = {get_number_part(p) for p in to_jump if get_number_part(p)}
                     source_numbers = raw_chunk.iloc[:, 0].apply(get_number_part)
 
                     # Create filter mask
@@ -647,10 +690,9 @@ async def main_async():
         await manager.cleanup_all()
 
 
-def main():
-    """Entry point - runs the async main"""
-    asyncio.run(main_async())
-
-
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        print("\n⚠️ Process interrupted by user. Exiting gracefully...")
+        sys.exit()

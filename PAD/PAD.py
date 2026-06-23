@@ -30,6 +30,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver import ActionChains
 from selenium.webdriver.chrome.service import Service
 
+
+os.system('cls' if os.name == 'nt' else 'clear')
+
+
 class BreakInnerLoop(Exception):
     pass
 

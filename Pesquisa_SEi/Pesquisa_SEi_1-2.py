@@ -18,6 +18,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 from bs4 import BeautifulSoup
 
+os.system('cls' if os.name == 'nt' else 'clear')
 
 # --- Garante que o navegador esteja na aba correta e conectardo ao sei ---
 def switch_to_sei(driver):
@@ -100,8 +101,8 @@ def formato_padrao(num_sei: str):
 
 
 # --- Ler processos válidos ---
-def ler_processos_validos(caminho_excel: str, nome_coluna: str = "processo") -> list:
-    df = pd.read_excel(caminho_excel)
+def ler_processos_validos(caminho_excel: str, nome_coluna: str = "Processo") -> list:
+    df = pd.read_excel(caminho_excel, dtype=str)
     print(f'Planilha carregada com {len(df)} linhas.')
 
     padrao = re.compile(r"^\d{5}\.\d{6}\/\d{4}-\d{2}$")  # ex: 71000.037605/2025-61
@@ -119,7 +120,7 @@ def extrair_links_processo(navegador, numero_processo):
     in_case_empty = [{
         "processo": numero_processo,
         "texto_link": "Erro: Sessão expirada ou acesso negado",
-        "SNEALIS": "",
+        "SNEAELIS": "",
         "CGEALIS": "",
         "CGFP": "",
         "CGC": "",
@@ -140,8 +141,7 @@ def extrair_links_processo(navegador, numero_processo):
 
         # Verificar se apareceu mensagem de "sem resultados"
         try:
-            div_sem_resultado = WebDriverWait(navegador, 1).until(EC.presence_of_element_located((By.CLASS_NAME,
-                                                                                                  "pesquisaSemResultado")))
+            div_sem_resultado = WebDriverWait(navegador, 1).until(EC.presence_of_element_located((By.CLASS_NAME, "pesquisaSemResultado")))
 
             if div_sem_resultado and div_sem_resultado.is_displayed():
                 print(f"⚠️  Processo {numero_processo}: Nenhum resultado encontrado")
@@ -191,7 +191,7 @@ def extrair_links_processo(navegador, numero_processo):
                         resultados.append({
                             "processo": numero_processo,
                             "texto_link": f"{texto} ({descricao})".strip(),
-                            "SNEALIS": "SNEALIS" if "SNEALIS" in texto_para_busca else "",
+                            "SNEAELIS": "SNEAELIS" if "SNEAELIS" in texto_para_busca else "",
                             "CGEALIS": "CGEALIS" if "CGEALIS" in texto_para_busca else "",
                             "CGFP": "CGFP" if "CGFP" in texto_para_busca else "",
                             "CGC": "CGC" if "CGC" in texto_para_busca else "",
@@ -204,7 +204,7 @@ def extrair_links_processo(navegador, numero_processo):
                 resultados.append({
                     "processo": numero_processo,
                     "texto_link": raw_text_total,
-                    "SNEALIS": "SNEALIS" if "SNEALIS" in raw_upper else "",
+                    "SNEAELIS": "SNEAELIS" if "SNEAELIS" in raw_upper else "",
                     "CGEALIS": "CGEALIS" if "CGEALIS" in raw_upper else "",
                     "CGFP": "CGFP" if "CGFP" in raw_upper else "",
                     "CGC": "CGC" if "CGC" in raw_upper else "",
@@ -219,10 +219,6 @@ def extrair_links_processo(navegador, numero_processo):
                           f"{type(e).__name__}.\nMSG: {str(e)[:100]}")
             return []
 
-        navegador.switch_to.default_content()
-
-        return resultados  # <- ESSENCIAL PARA O FLUXO NORMAL DO SELENIUM ✅
-
     except Exception as e:
         import sys
         msg = f"❌ Erro no processo {numero_processo}"
@@ -234,7 +230,7 @@ def extrair_links_processo(navegador, numero_processo):
         return [{
             "processo": numero_processo,
             "texto_link": f"Erro: {str(e)}",
-            "SNEALIS": "",
+            "SNEAELIS": "",
             "CGEALIS": "",
             "CGFP": "",
             "CGC": "",
@@ -274,7 +270,7 @@ def delete_destiny_data(arquivo_destino, create_backup=True):
         bool: True if successful, False otherwise
     """
     # Define the headers
-    headers = ['processo', 'texto_link', 'SNEALIS', 'CGEALIS', 'CGFP', 'CGC', 'CGAP']
+    headers = ['processo', 'texto_link', 'SNEAELIS', 'CGEALIS', 'CGFP', 'CGC', 'CGAP']
 
     if not os.path.exists(arquivo_destino):
         print(f"📁 File not found: {arquivo_destino}")
@@ -428,20 +424,17 @@ def executar_scraping():
             f"\n{indice} {'>' * 10} Porcentagem concluída:"
             f" {(indice / max_linha) * 100:.2f}% | ETA: {eta_minutes:02d}:{eta_secs:02d}\n")
 
-    arquivo_fonte = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência "
-                     r"Social\Teste001\propostas_SEi.xlsx")
+    # --- Planilha PADRÃO--- 
+    arquivo_fonte = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\propostas_SEi.xlsx")
+    
+    # --- Planilha POLI --- 
+    #arquivo_fonte = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\dashboard-nodejs\DATA\Acompanhamento\Controle SNEAELIS - 2026.xlsx"
 
-    quarter = int(input('Digite qual quarto da base está sendo executado (between 1 to 4) :: '))
+    quarter = int(input('Digite qual quarto da base está send1o executado (between 1 to 4) :: '))
 
-    # arquivo_destino = fr"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - webscraping\Consulta_SEi\Consultas parciais\consulta_direcao_sei_{quarter}-4.xlsx"
+    #arquivo_destino = fr"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - webscraping\Consulta_SEi\Consultas parciais\consulta_direcao_sei_{quarter}-4.xlsx"
 
     arquivo_destino = fr'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Processo_SEi\_consulta_direcao_sei_{quarter}-4.xlsx'
-
-
-    reset_df = input(str('Deseja resetar o Data_Frame? [Y/n]'))
-    if reset_df == 'Y':
-        delete_destiny_data(arquivo_destino)
-
 
     other_door = input('Enter the door you are using:\n If you are using 9222, just type enter.  ')
 
@@ -450,6 +443,10 @@ def executar_scraping():
     else:
         navegador = conectar_navegador_existente()
 
+
+    reset_df = input(str('Deseja resetar o Data_Frame? [Y/n]'))
+    if reset_df == 'Y':
+        delete_destiny_data(arquivo_destino)
 
 
     processos_todos = ler_processos_validos(arquivo_fonte) # Is a list

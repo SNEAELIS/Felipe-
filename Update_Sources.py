@@ -1,9 +1,28 @@
-import re
+import re, os
 import shutil
 
 from pathlib import Path
 
 from datetime import datetime
+
+os.system('cls' if os.name == 'nt' else 'clear')
+
+
+def file_exists_in_destination(dest_dir: Path, filename: str) -> bool:
+    """
+    Check if a file with the given name exists in the destination directory.
+    Returns True if found, False otherwise.
+    """
+    dest_file = dest_dir / filename
+    exists = dest_file.exists()
+    if exists:
+        print(f"  ✓ File verified in destination: {filename}")
+        print(f"    Path: {dest_file}")
+        print(f"    Size: {dest_file.stat().st_size} bytes")
+    else:
+        print(f"  ✗ File NOT found in destination: {filename}")
+        print(f"    Expected path: {dest_file}")
+    return exists
 
 
 def copy_todays_files_cmof(source_dir:Path, dest_dir:Path):
@@ -72,9 +91,17 @@ def copy_todays_files_cmof(source_dir:Path, dest_dir:Path):
                 dest_file_path.parent.mkdir(parents=True, exist_ok=True)
 
                 # Copy the file
-                shutil.copy2(file_path, dest_file_path)
-                print(f"  ✓ Copied: {file_path.name}")
-                copied_count += 1
+                try:
+                    shutil.copy2(file_path, dest_file_path)
+                    print(f"  ✓ Copied: {file_path.name}")
+                    
+                    # Verify the file was actually copied
+                    if file_exists_in_destination(dest_file_path.parent, file_path.name):
+                        copied_count += 1
+                    else:
+                        print(f"  ⚠️  Copy verification failed for: {file_path.name}")
+                except Exception as e:
+                    print(f"  ✗ Error copying {file_path.name}: {type(e).__name__}: {str(e)[:100]}")
 
     # Summary
     print(f"\n{'=' * 50}")
@@ -87,6 +114,8 @@ def copy_todays_files_cmof(source_dir:Path, dest_dir:Path):
 
 
 def copy_tgov_files(source_dir:Path, dest_dir:Path):
+    print(f"\n{'=' * 50}")
+
     dirs_mapping = {
         'Resultado scraping Aba Dados': 'Aba Dados',
         'Consulta_SEi': 'SEI',
@@ -144,18 +173,18 @@ if __name__ == "__main__":
     # =========================================================================
     # PATHS para as pastas de destino
     # =========================================================================
-    destiny_path_cmof = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\dashboard-nodejs\Orcamento")
+    destiny_path_cmof = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\dashboard-nodejs\Orcamento\painel-orcamento\dados-mensais")
 
     destiny_path_tgov = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\dashboard-nodejs\DATA\TGov")
 
-    destiny_path_acompanhamento = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\dashboard-nodejs\DATA\Acompanhamento\Controle SNEAELIS - 2026.xlsx")
+    destiny_path_acompanhamento = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\dashboard-nodejs\DATA\Acompanhamento")
 
     # =========================================================================
     # PATHs para as pastas fonte
     # =========================================================================
     path_CMOF = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Arquivos de Andre Luiz de Oliveira Santos - 2026")
 
-    path_acompanhamento = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Assessoria\2026\001 - Controle\Controle SNEAELIS - 2026.xlsx")
+    path_acompanhamento = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - 001 - Controle\Controle SNEAELIS - 2026.xlsx")
 
     path_tgov = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\webscraping"
 )
@@ -169,7 +198,12 @@ if __name__ == "__main__":
     # =========================================================================
     # --- Acompanhamento ---
     # =========================================================================
-    shutil.copy2(path_acompanhamento, destiny_path_acompanhamento)
+    try:
+        print(f"\n{'=' * 50}")
+        shutil.copy2(path_acompanhamento, destiny_path_acompanhamento)
+        print(f"✓ Copied: {path_acompanhamento.name} → {destiny_path_acompanhamento}")
+    except Exception as e:
+        print(f"✗ Error copying {path_acompanhamento.name}: {type(e).__name__}: {str(e)[:100]}")
 
     # =========================================================================
     # --- TGov ---

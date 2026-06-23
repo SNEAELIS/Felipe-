@@ -31,17 +31,27 @@ import io
 import os
 from openpyxl import load_workbook
 from openpyxl.styles import numbers
+from pathlib import Path
+from kkk import find_lost_props, props_tgov_filtered
 
 r'''
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\chrome_profile" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9224 --user-data-dir="%USERPROFILE%\chrome_profile_2" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9226 --user-data-dir="%USERPROFILE%\chrome_profile_3" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9228 --user-data-dir="%USERPROFILE%\chrome_profile_4" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9230 --user-data-dir="%USERPROFILE%\chrome_profile_5" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://sei.mds.gov.br/sip/login.php?sigla_orgao_sistema=MC&sigla_sistema=SEI"
+
+
 '''
+# ███████████████████████████████████████████████████████████████████████
+#                            COMMENT TEMPLATE
+# ███████████████████████████████████████████████████████████████████████
 
 
 
 pytesseract.pytesseract.tesseract_cmd = r"C:\Users\felipe.rsouza\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"
 
+os.system('cls' if os.name == 'nt' else 'clear')
 
 
 if __name__ == "__main__":
@@ -2019,26 +2029,54 @@ if __name__ == "__main__":
         find_and_clear_dirs(main_dir=main_directory, tgt_name=target_dir_name)
 
 
-    # copy sharepoint xlsx file to desire directory
+    # ███████████████████████████████████████████████████████████████████████
+    #               merge aba_dados emails databases
+    # ███████████████████████████████████████████████████████████████████████
     elif func == 23:
-        def manual_sync_workflow(destiny_dir: str):
-            # Option C: Browser download folder
-            download_folder = os.path.expanduser("~/Downloads/")
-            # Find the latest Excel file
-            excel_files = [f for f in os.listdir(download_folder) if f.endswith('.xlsx')]
+        print('Mergin results from the "Aba Dados Emails" scrape.')
+        
+        source_dir = r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Aba_Dados\emails'
+        
+        df_s = []
 
-            if excel_files:
-                latest_file = max(excel_files, key=lambda x: os.path.getmtime(os.path.join(download_folder, x)))
-                shutil.move(os.path.join(download_folder, latest_file), destiny_dir)
+        for file in os.listdir(source_dir):
+            if file.endswith('.xlsx'):
+                df_s.append(pd.read_excel(os.path.join(source_dir, file), dtype=str))
+
+        df1, df2, df3, df4 = df_s
+
+        # Step 1: Merge the dataframes
+        merged_df = pd.concat([df1, df2, df3, df4], ignore_index=True)
+
+        # Store original data before any conversion
+        original_merged_df = merged_df.copy()
+
+        # Step 3: Remove duplicate rows
+        merged_df = merged_df.drop_duplicates(subset='E-mail', keep='first')
+        original_merged_df = original_merged_df.drop_duplicates(subset='E-mail')
+
+        # Step 4: Reset index (optional, but nice to have clean index)
+        merged_df = merged_df.reset_index(drop=True)
+        original_merged_df = original_merged_df.reset_index(drop=True)
+
+        # Display results
+        print(f"Original df1: {len(df1)} rows")
+        print(f"Original df2: {len(df2)} rows")
+        print(f"Original df3: {len(df3)} rows")
+        print(f"Original df4: {len(df4)} rows")
+
+        print(f"After merge: {len(df1) + len(df2) + len(df3) + len(df4)} rows")
+        print(f"After removing duplicates: {len(merged_df)} rows")
 
 
-        dir_path = (r'C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência '
-                    r'Social\Teste001\fabi_DFP\Consultas.xlsx')
+        file_path = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\webscraping\Resultado scraping Aba Dados\resultado_aba_dados_emails.xlsx"
 
-        manual_sync_workflow(destiny_dir=dir_path)
+        merged_df.to_excel(file_path, index=False)
 
 
-    # better fake function
+    # ███████████████████████████████████████████████████████████████████████
+    #               better fake function
+    # ███████████████████████████████████████████████████████████████████████
     elif func == 24:
         class BreakInnerLoop(Exception):
             pass
@@ -2293,7 +2331,7 @@ if __name__ == "__main__":
                     for name in sheet_names_list:
                         print(f"- {name}")
 
-                    data_frame = complete_data_frame['Limpa']
+                    data_frame = complete_data_frame['Sheet1']
                     print(f"✅ Loaded {len(data_frame)} rows from Excel.")
                     return data_frame
 
@@ -2306,10 +2344,10 @@ if __name__ == "__main__":
                 time.sleep(0.75)
 
                 if pd.isna(numero_proposta):
+                    print("⚠️ Process number is NaN, skipping.")
                     return False
 
-                numero_proposta = str(numero_proposta)
-
+                numero_proposta = re.sub(r'^0+', '', str(numero_proposta)).strip()
                 pattern = r'^\d{5}/\d{4}'
 
                 if '_' in numero_proposta:
@@ -2338,10 +2376,10 @@ if __name__ == "__main__":
                 return
 
             robo.consulta_proposta()
-
             for idx, row in df.iterrows():
                 numero_processo_temp = row.iloc[0]
                 numero_processo = robo.fix_prop_num(numero_processo_temp)
+                print(f"\nProcessing row {idx + 1}/{len(df)}: Original='{numero_processo_temp}' | Fixed='{numero_processo}'")
 
                 if not numero_processo:
                     continue
@@ -2371,18 +2409,19 @@ if __name__ == "__main__":
         if __name__ == "__main__":
             main()
 
-
-    # merge aba_dados resuolts databases
+    # ███████████████████████████████████████████████████████████████████████
+    #               merge aba_dados resuolts databases
+    # ███████████████████████████████████████████████████████████████████████
     elif func == 25:
         print('Mergin results from the "Aba Dados" scrape.')
         df1 = pd.read_excel(
-            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\resultado_aba_dados_9222.xlsx")
+            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Aba_Dados\scrape\resultado_aba_dados_9222.xlsx")
         df2 = pd.read_excel(
-            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\resultado_aba_dados_9224.xlsx")
+            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Aba_Dados\scrape\resultado_aba_dados_9224.xlsx")
         df3 = pd.read_excel(
-            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\resultado_aba_dados_9226.xlsx")
+            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Aba_Dados\scrape\resultado_aba_dados_9226.xlsx")
         df4 = pd.read_excel(
-            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\resultado_aba_dados_9228.xlsx")
+            r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Aba_Dados\scrape\resultado_aba_dados_9228.xlsx")
 
         # Step 1: Merge the dataframes
         merged_df = pd.concat([df1, df2, df3, df4], ignore_index=True)
@@ -2391,8 +2430,8 @@ if __name__ == "__main__":
         original_merged_df = merged_df.copy()
 
         # Step 3: Remove duplicate rows
-        merged_df = merged_df.drop_duplicates()
-        original_merged_df = original_merged_df.drop_duplicates()
+        merged_df = merged_df.drop_duplicates(subset='Número da Proposta', keep='first')
+        original_merged_df = original_merged_df.drop_duplicates(subset='Número da Proposta')
 
         # Step 4: Reset index (optional, but nice to have clean index)
         merged_df = merged_df.reset_index(drop=True)
@@ -2569,8 +2608,9 @@ if __name__ == "__main__":
 
         print("\n✓ Comparative analysis completed!")
 
-
-    # merges processos sei databases
+    # ███████████████████████████████████████████████████████████████████████
+    #               merges processos sei databases
+    # ███████████████████████████████████████████████████████████████████████
     elif func == 26:
         print('Merging SEi dataframes')
 
@@ -2600,17 +2640,13 @@ if __name__ == "__main__":
 
         # Step 3: Remove completely empty rows (rows where all values are NaN/empty)
         merged_df = merged_df.dropna(how='all')
-
-        # Step 4: Remove duplicate rows
-        merged_df = merged_df.drop_duplicates()
-
-        # Step 5: Reset index (optional, but nice to have clean index)
-        merged_df = merged_df.reset_index(drop=True)
-
-        merged_df.to_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\webscraping\Consulta_SEi\consulta_direcao_sei_final.xlsx")
-
-        # merged_df.to_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\Processo_SEi\consulta_direcao_sei_final.xlsx")
-
+       
+        # Step 4: Keep only rows that have SNEAELIS
+        df_diff = merged_df[~merged_df['SNEAELIS'].str.contains('SNEAELIS', na=False)]
+        merged_df = merged_df[merged_df['SNEAELIS'] == 'SNEAELIS']
+        
+        merged_df.to_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\webscraping\Consulta_SEi\consulta_direcao_sei_final.xlsx", index=False)
+        df_diff.to_excel(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\webscraping\Consulta_SEi\Consultas parciais\sei_diff.xlsx", index=False)
 
 
         # Display results
@@ -2622,9 +2658,115 @@ if __name__ == "__main__":
 
         # Count rows with periods
         rows_with_period = matches_pattern_mask.sum()
-        print(f"Rows containing pattern: {rows_with_period}")
+        print(f"DataFrame with differences: {len(df_diff)} rows")
         print(f"After removing pattern rows: {len(merged_df)} rows")
         print(f"After removing empty rows: {len(merged_df)} rows")
         print(f"After removing duplicates: {len(merged_df)} rows")
 
+    # ███████████████████████████████████████████████████████████████████████
+    #        generate month/year mapping for excel columns
+    # ███████████████████████████████████████████████████████████████████████
+    elif func == 27:
+        from datetime import datetime
 
+        def gerar_mapeamento_meses(ano_atual) -> dict:
+            """
+            Gera um dicionário com o formato {'MES/ANO': numero_mes} para todos os meses do ano.
+
+            Args:
+                ano (int): Ano a ser utilizado (ex: 2026)
+
+            Returns:
+                dict: Exemplo -> {'JAN/2026': 1, 'FEV/2026': 2, ..., 'DEZ/2026': 12}
+            """
+
+            # Abreviações de 3 letras em português (maiúsculas)
+            abreviacoes = [
+                "JAN", "FEV", "MAR", "ABR", "MAI", "JUN",
+                "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"
+            ]
+            
+            # Gera o dicionário: cada abreviação combinada com o ano recebe o índice+1 (mês 1..12)
+            mapeamento = {f"{abrev}/{ano_atual}": i + 1 for i, abrev in enumerate(abreviacoes)}
+            return mapeamento
+
+        if __name__ == "__main__":
+            resultado = gerar_mapeamento_meses()
+            ano_atual = datetime.now().year
+            print(f"Dicionário para o ano {ano_atual}:")
+            for coluna, mes_num in resultado.items():
+                print(f"{coluna} -> {mes_num}")
+            
+            # O dicionário retornado pode ser usado para mapear colunas de um DataFrame, planilha, etc.
+            # Exemplo: df.rename(columns=resultado) ou df[list(resultado.keys())]
+
+    # ███████████████████████████████████████████████████████████████████████
+    #        get new proposals from -publico.serpro.gov.br
+    # ███████████████████████████████████████████████████████████████████████
+    elif func == 28:
+        input_file = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\source_file_sneaelis.xlsx")
+        if not os.path.exists(input_file):
+            print(f"Error: Input file '{input_file}' not found!")
+            sys.exit(1)
+        
+        output_file = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\new_processes_sneaelis.xlsx")
+
+        filter_values = [
+            '203500SL',
+            '203520JP',
+            '502600SL',
+            '502620JP',
+            '512600SL',
+            '512620JP',
+            '512620JQ',
+            '00005450',
+            '20355450'
+            ]
+
+        try:
+            print(f"Reading Excel file: {input_file}")
+            df = pd.read_excel(input_file, dtype=str)
+            print(df.columns)
+            print(f"Original file has {len(df)} rows and {len(df.columns)} columns")
+
+            filter_col = 'Ação Orçamentária'
+            print(f"\nFiltering based on column: '{filter_col}'")
+            
+            # Filter the dataframe
+            filtered_df = df[df[filter_col].astype(str).isin(filter_values)]
+            
+            print(f"\nFiltered data has {len(filtered_df)} rows")
+            
+            # Display found values
+            found_values = filtered_df[filter_col].astype(str).tolist()
+            not_found = [val for val in filter_values if val not in found_values]
+            
+            print(f"\nFound {len(found_values)} matching values")
+
+            if not_found:
+                print(f"Values NOT found in the file: {not_found}")
+            
+            # Save to new Excel file if output path is provided
+            if output_file:
+                filtered_df.to_excel(output_file, index=False)
+                print(f"\nFiltered data saved to: {output_file}")
+            else:
+                # Auto-generate output filename
+                output_file = input_file.replace('.xlsx', '_filtered.xlsx')
+                filtered_df.to_excel(output_file, index=False)
+                print(f"\nFiltered data saved to: {output_file}")
+            
+        
+        except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            print(f"Error at line {exc_tb.tb_lineno}")
+            print(f"❌ Error: {type(e).__name__}\n{str(e)[:100]}")
+
+    #███████████████████████████████████████████████████████████████████████
+    #        remove the proposal numbers that are not in sneaelis from tgov data set
+    # ███████████████████████████████████████████████████████████████████████
+    elif func == 29:
+        print('Forced correction on TGOv data set')
+        find_lost_props()
+        time.sleep(2)
+        props_tgov_filtered()
