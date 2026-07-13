@@ -40,7 +40,7 @@ r'''
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9226 --user-data-dir="%USERPROFILE%\chrome_profile_3" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9228 --user-data-dir="%USERPROFILE%\chrome_profile_4" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9230 --user-data-dir="%USERPROFILE%\chrome_profile_5" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://sei.mds.gov.br/sip/login.php?sigla_orgao_sistema=MC&sigla_sistema=SEI"
-
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9232 --user-data-dir="%USERPROFILE%\chrome_profile_6" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://sei.mds.gov.br/sip/login.php?sigla_orgao_sistema=MC&sigla_sistema=SEI"
 
 '''
 # ███████████████████████████████████████████████████████████████████████
