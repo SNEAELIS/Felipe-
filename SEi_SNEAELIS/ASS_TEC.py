@@ -5,6 +5,7 @@ import time
 import os
 import traceback
 import json
+import pathlib
 
 from dataclasses import dataclass, fields
 
@@ -13,6 +14,7 @@ from datetime import datetime
 
 import pandas as pd
 
+# pyrefly: ignore [missing-import]
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 
 
@@ -21,9 +23,7 @@ os.system('cls' if os.name == 'nt' else 'clear')
 
 @dataclass
 class WorkbookState:
-
     def __init__(self):
-
         self.bloco = None
 
         self.processos = None
@@ -145,7 +145,7 @@ def acessa_bloco_ass(page):
 
 
 # --- Extrai os processos do bloco de assinatura ---
-def extrair_dados_bloco(page, arquivo_excel: str):
+def extrair_dados_bloco(page):
     """Extract data from signature block"""
     try:       
         # Wait for table
@@ -191,7 +191,7 @@ def extrair_dados_bloco(page, arquivo_excel: str):
 
 
 # --- Extrai os processos das propostas ---
-def extrair_dados_propostas(page, arquivo_excel: str):
+def extrair_dados_propostas(page):
     """Extract data from proposals"""
     try:
         # Wait for block table
@@ -720,7 +720,7 @@ def extract_history_from_nested_frame(page, numero_processo) -> list[dict]:
 
 
 # --- Extrai detalhes das propostas (andamentos) ---
-def get_proposal_details(page, arquivo_excel: str, sheet_name: str, processos=None ):
+def get_proposal_details(page, sheet_name: str, processos=None ):
     """Extract proposal tracking details and save to specified sheet_name"""
     
     columns = ['Processo', 'Data/Hora', 'Unidade', 'Usuário', 'Descrição']
@@ -802,7 +802,7 @@ def get_proposal_details(page, arquivo_excel: str, sheet_name: str, processos=No
                     else:
                         time.sleep(1)
                         attempt += 1
-                        print(f"⚠️ Nenhum andamento encontrado para {numero_processo}.\nTentando novamento, tentativa número{attempt}")
+                        
                 
             except Exception as e:
                 continue
@@ -832,6 +832,7 @@ def get_proposal_details(page, arquivo_excel: str, sheet_name: str, processos=No
         return all_results_df
     else:
         print(f"⚠️ Nenhum registro coletado. Nenhuma gravação realizada.")
+
 
 # --- Extrai os dados de cada processo ---
 def extract_received_processos(page) -> pd.DataFrame:
@@ -1024,6 +1025,7 @@ def confere_iframe(page, iframe_id: str, dbg: bool = False):
         print(f"Error finding iframe: {type(e).__name__} - {str(e)[:80]}")
         return None
 
+
 # --- Salva os dados no excel ---
 def salvar_excel(arquivo: str | Path, dados) -> bool:
     """
@@ -1139,6 +1141,7 @@ def salvar_excel(arquivo: str | Path, dados) -> bool:
         traceback.print_exc()
         return False
     
+
 # --- Ordena as planilhas em sequência específica ---
 def order_sheets(sheets: dict) -> list[tuple[str, object]]:
     """Return workbook sheets in the fixed desired order."""
@@ -1152,6 +1155,7 @@ def order_sheets(sheets: dict) -> list[tuple[str, object]]:
         if sheet_name not in SHEET_ORDER:
             ordered.append((sheet_name, sheet_df))
     return ordered
+
 
 # --- Salva dados concatenados em Excel com data para avaliação de performance diária ---
 def salvar_excel_com_data(arquivo: str | Path, dados) -> bool:
@@ -1340,17 +1344,60 @@ def salvar_excel_com_data(arquivo: str | Path, dados) -> bool:
         traceback.print_exc()
         return False
 
+
+# --- Seleciona caixas do SEi que são da SNEAELIS ---
+def selecionar_caixa_sei(page, caixa: str):
+    """Select the specified mailbox row in SEI by caixa text."""
+    paths = {
+        'ver caixas': 'xpath=/html/body/div[1]/nav/div/div[3]/div[2]/div[2]/div/a',
+        'tabela de caixas': 'xpath=/html/body/div[1]/div/div[2]/form/div[3]/table',
+    }
+
+    try:
+        caixa_dropdown = page.wait_for_selector(paths['ver caixas'], timeout=5000)
+        caixa_dropdown.click()
+
+        tabela = page.wait_for_selector(paths['tabela de caixas'], timeout=5000)
+        rows = tabela.query_selector_all('tr')
+
+        target_row = None
+        for row in rows:
+            row_text = row.inner_text().strip()
+            if caixa in row_text:
+                target_row = row
+                break
+
+        if not target_row:
+            print(f"❌ Caixa '{caixa}' não encontrada na tabela de caixas.")
+            sys.exit('Stoping script due to lack of "SEI caixa" link.')
+
+        radio_button = target_row.query_selector('input[type="radio"]')
+        if radio_button:
+            radio_button.click(force=True)
+            print(f"✅ Successfully selected radio button for '{caixa}'")
+        else:
+            print(f"❌ Radio button not found inside the row for '{caixa}'")
+            sys.exit('Stoping script due to lack of "SEI caixa" link.')
+
+        return True
+
+    except Exception as e:
+        print(f"❌ Erro ao selecionar a caixa '{caixa}': {type(e).__name__} - {str(e)[:80]}")
+        traceback.print_exc()
+        sys.exit('Stoping script due to lack of "SEI caixa" link.')
+
+
 # --- Função principal ---
 def executar_scraping():
     """Main execution function"""
-    
-    arquivo_fonte = r"C:\Users\felipe.rsouza\Automação SNEAELIS\Dashboard sei DB\DB_sei_se.xlsx"
-    arquivo_destino = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\Controle_SEI\DB_sei_se.xlsx"
-    other_door = '9230'
+    root_folder = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\Controle_SEI - SNEAELIS\Data_Bases")
+
+    caixas: list = ['MESP/SNEAELIS/DAPC', 'MESP/SNEAELIS/DAPC/CGAC', 'MESP/SNEAELIS/DAPC/CGAP', 'MESP/SNEAELIS/DAPC/CGAP-AP', 'MESP/SNEAELIS/DAPC/CGAP-CVTD', 'MESP/SNEAELIS/DAPC/CGAP-TEF', 'MESP/SNEAELIS/DEAELIS', 'MESP/SNEAELIS/DEAELIS/CGEALIS', 'MESP/SNEAELIS/DEAELIS/CGEE', 'MESP/SNEAELIS/DFP', 'MESP/SNEAELIS/DIE/CGGIE', 'MESP/SNEAELIS/DIE/CGIIE', 'MESP/SNEAELIS/DIE/CGPIE', 'MESP/SNEAELIS/GAB-Ass.Técnica', 'MESP/SNEAELIS/GAB-CMOF']
+
+    other_door = '9232'
     
     page = None
     playwright = None
-    state = WorkbookState()
 
     try:
         if isinstance(other_door, str) and other_door.isdigit():
@@ -1360,55 +1407,57 @@ def executar_scraping():
             print("❌ Failed to connect to browser. Exiting.")
             return
         
+        for caixa_str in caixas:
+            state = WorkbookState()
 
-        while True:
+            parts = [part.strip() for part in str(caixa_str).split('/') if part.strip()]
+            if 'SNEAELIS' not in parts:
+                continue
+
+            index_sne = parts.index('SNEAELIS')
+            values_after_sneaelis = parts[index_sne + 1:]
+            if not values_after_sneaelis:
+                continue
+
+            file_name = '_'.join(values_after_sneaelis) + '.xlsx'
+            arquivo_path = root_folder / file_name
+
+            if not arquivo_path.exists():
+                with pd.ExcelWriter(arquivo_path, engine='openpyxl') as writer:
+                    pd.DataFrame().to_excel(writer, index=False)
+
             try:
-                # Check current time to decide if we should save
-                now = datetime.now()
-                current_hour = now.hour
+                selecionar_caixa_sei(page=page, caixa=caixa_str)
                 
-                # Only save between 7:00 and 21:00
-                should_save = 7 <= current_hour < 21
-
-                # Main loop
+                # Check current time to decide if we should save
                 acessa_bloco_ass(page=page)
 
-                state.bloco = extrair_dados_bloco(page=page,
-                                     arquivo_excel=arquivo_fonte
-                                     )
+                state.bloco = extrair_dados_bloco(page=page)
                 
-                state.processos = extrair_dados_propostas(page=page,
-                                        arquivo_excel=arquivo_fonte
-                                        )
- 
-                state.andamento = get_proposal_details(page=page,
-                                     arquivo_excel=arquivo_fonte,
-                                     sheet_name='Andamento',
-                                     processos=state.processos
-                                     )
-                
-                state.controle = get_proposal_details(page=page,
-                                     arquivo_excel=arquivo_fonte,
-                                     sheet_name='Controle de Processo'
-                                     )
+                state.processos = extrair_dados_propostas(page=page)
 
-                salvar_excel(arquivo=arquivo_fonte, dados=state)
+                state.andamento = get_proposal_details(page=page,
+                                                        sheet_name='Andamento', processos=state.processos)
+
+                state.controle = get_proposal_details(page=page,
+                                                    sheet_name='Controle de Processo')
+
+                salvar_excel(arquivo=arquivo_path, dados=state)
+
+                """now = datetime.now()
+                current_hour = now.hour
+                should_save = 7 <= current_hour < 21
 
                 if should_save:
-                    salvar_excel_com_data(arquivo=arquivo_fonte, dados=state)
-
+                    salvar_excel_com_data(arquivo=arquivo_path, dados=state)"""
+                
                 page.click('#lnkControleProcessos')
 
-                shutil.copy(arquivo_fonte, arquivo_destino)
-                print(f"\n✅ Copied file to {arquivo_destino}\n")
-                
-                time.sleep(5)  
-               
             except Exception as e:
-                print(f"Error in main loop: {type(e).__name__}")
+                page.click('#lnkControleProcessos')
+                print(f"Error in main loop for {arquivo_path}: {type(e).__name__}")
                 print(f"Message: {str(e)[:100]}")
                 traceback.print_exc()
-                time.sleep(60)  # Wait a minute before retrying
                 
     except KeyboardInterrupt:
         print("\n🛑 Script interrupted by user")
