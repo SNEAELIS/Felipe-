@@ -5,33 +5,13 @@ import time
 import os
 import traceback
 import json
-import pathlib
-
-from dataclasses import dataclass, fields
-
 from pathlib import Path
 from datetime import datetime
 
 import pandas as pd
-
-# pyrefly: ignore [missing-import]
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 
-
 os.system('cls' if os.name == 'nt' else 'clear')
-
-
-@dataclass
-class WorkbookState:
-    def __init__(self):
-        self.bloco = None
-
-        self.processos = None
-
-        self.andamento = None
-
-        self.controle = None
-
 
 # --- Garante que o navegador esteja na aba correta e conectado ao sei ---
 def switch_to_sei(page):
@@ -60,6 +40,173 @@ def switch_to_sei(page):
     return None
 
 
+# --- Carrega credenciais de login do arquivo ---
+def carregar_credenciais(arquivo_credenciais: str | Path = None):
+    """Load SEI credentials from a JSON file."""
+    if arquivo_credenciais is None:
+        arquivo_credenciais = Path(__file__).parent / 'SEI_credentials.json'
+    else:
+        arquivo_credenciais = Path(arquivo_credenciais)
+
+    if not arquivo_credenciais.exists():
+        print(f"❌ Arquivo de credenciais não encontrado: {arquivo_credenciais}")
+        print("📌 Crie um arquivo JSON contendo {\"username\": ..., \"password\": ..., \"login_url\": ...}")
+        return None
+
+    try:
+        with arquivo_credenciais.open('r', encoding='utf-8') as f:
+            dados = json.load(f)
+
+        username = dados.get('username') or dados.get('usuario') or dados.get('login')
+        password = dados.get('password') or dados.get('senha') or dados.get('pass')
+        login_url = dados.get('login_url') or 'https://sei.mds.gov.br/sip/login.php?sigla_orgao_sistema=MC&sigla_sistema=SEI'
+
+        if not username or not password:
+            print('❌ Arquivo de credenciais inválido. Verifique username e password.')
+            return None
+
+        return {'username': username, 'password': password, 'login_url': login_url}
+    except json.JSONDecodeError as e:
+        print('❌ Erro ao ler credenciais JSON:', str(e))
+        return None
+    except Exception as e:
+        print('❌ Erro inesperado ao carregar credenciais:', type(e).__name__, str(e)[:100])
+        return None
+
+
+# --- Inicia um navegador headless ---
+def iniciar_navegador_headless(headless: bool = True):
+    """Launch Playwright Chromium in headless mode."""
+    try:
+        playwright = sync_playwright().start()
+        browser = playwright.chromium.launch(
+            headless=headless,
+            args=[
+                '--disable-gpu',
+                '--no-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-extensions',
+                '--disable-infobars',
+            ],
+        )
+        context = browser.new_context()
+        page = context.new_page()
+        return page, playwright, browser
+    except Exception as e:
+        print('❌ Erro ao iniciar navegador headless:', type(e).__name__, str(e)[:100])
+        return None, None, None
+
+
+# --- Verifica se a página atual é a tela de login do SEI ---
+def is_login_page(page):
+    try:
+        login_url_fragments = ['/sip/login.php', '/sip/login', 'login']
+        if any(fragment in page.url.lower() for fragment in login_url_fragments):
+            return True
+
+        selectors = [
+            'input[name="txtLogin"]',
+            'input[name="login"]',
+            'input[name="usuario"]',
+            'input[type="password"]',
+            'input[name="txtSenha"]',
+        ]
+
+        for selector in selectors:
+            if page.query_selector(selector):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+# --- Realiza login no SEI ---
+def realizar_login_sei(page, credenciais: dict):
+    """Fill the SEI login form and submit."""
+    try:
+        print('🔐 Abrindo a página de login do SEI...')
+        page.goto(credenciais['login_url'], wait_until='domcontentloaded')
+
+        login_selectors = [
+            'input[name="txtLogin"]',
+            'input[name="login"]',
+            'input[name="usuario"]',
+            'input[type="text"]',
+        ]
+        password_selectors = [
+            'input[name="txtSenha"]',
+            'input[name="senha"]',
+            'input[type="password"]',
+        ]
+        submit_selectors = [
+            'button[type="submit"]',
+            'input[type="submit"]',
+            'button[name="btnOK"]',
+            'input[name="btnOK"]',
+        ]
+
+        login_field = None
+        for selector in login_selectors:
+            try:
+                login_field = page.wait_for_selector(selector, timeout=6000)
+                print(f'✓ Found login field: {selector}')
+                break
+            except Exception:
+                continue
+
+        password_field = None
+        for selector in password_selectors:
+            try:
+                password_field = page.wait_for_selector(selector, timeout=6000)
+                print(f'✓ Found password field: {selector}')
+                break
+            except Exception:
+                continue
+
+        if not login_field or not password_field:
+            print('❌ Não foi possível localizar os campos de login e/ou senha.')
+            return False
+
+        login_field.fill(credenciais['username'])
+        page.wait_for_timeout(200)
+        password_field.fill(credenciais['password'])
+        page.wait_for_timeout(200)
+
+        clicked = False
+        for selector in submit_selectors:
+            try:
+                button = page.query_selector(selector)
+                if button:
+                    button.click()
+                    clicked = True
+                    print(f'✓ Clicked submit button: {selector}')
+                    break
+            except Exception:
+                continue
+
+        if not clicked:
+            page.keyboard.press('Enter')
+            print('✓ Pressed Enter to submit login form')
+
+        try:
+            page.wait_for_load_state('networkidle', timeout=15000)
+        except Exception:
+            pass
+
+        page.wait_for_timeout(1000)
+
+        if is_login_page(page):
+            print('❌ Login falhou ou a página de login ainda está visível. Verifique as credenciais e o CAPTCHA.')
+            return False
+
+        print('✅ Login realizado com sucesso! URL atual:', page.url)
+        return True
+
+    except Exception as e:
+        print('❌ Erro ao realizar login:', type(e).__name__, str(e)[:120])
+        return False
+
+
 # --- Conectar ao navegador existente ---
 def conectar_navegador_existente(porta: int):
     """Connect to existing Chrome instance via Playwright"""
@@ -68,10 +215,8 @@ def conectar_navegador_existente(porta: int):
         
         playwright = sync_playwright().start()
         
-        # Connect to existing Chrome instance
         browser = playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{porta}")
         
-        # Get the first page or create a new one
         if browser.contexts:
             context = browser.contexts[0]
             if context.pages:
@@ -82,8 +227,9 @@ def conectar_navegador_existente(porta: int):
             context = browser.new_context()
             page = context.new_page()
         
-        # Check if we're on SEI
-        switch_to_sei(page)
+        sei_page = switch_to_sei(page)
+        if sei_page:
+            page = sei_page
 
         print("Current URL:", page.url)
         print("✅ Conectado ao navegador existente com sucesso!")
@@ -133,7 +279,8 @@ def acessa_bloco_ass(page):
             try:
                 element = page.wait_for_selector(xpath, timeout=2000)
                 element.click()
-                time.sleep(0.3)
+                time.sleep(0.5)
+                print(f"✓ Clicked on {xpath}")
             except:
                 continue
                 
@@ -145,9 +292,11 @@ def acessa_bloco_ass(page):
 
 
 # --- Extrai os processos do bloco de assinatura ---
-def extrair_dados_bloco(page):
+def extrair_dados_bloco(page, arquivo_excel: str):
     """Extract data from signature block"""
-    try:       
+    try:
+        print(f"🔄 Iniciando processo de scraping - Bloco")
+        
         # Wait for table
         try:
             table = page.wait_for_selector('#tblBlocos tbody', timeout=7000)
@@ -172,11 +321,13 @@ def extrair_dados_bloco(page):
                     resultados.append(linha_dados)
             
             if resultados:
-                print(f"Total de {len(resultados)} linhas extraidas do BLOCO DE ASSINATURA")
-                return pd.DataFrame(resultados)
+                salvar_linha_excel(buffer_dados=resultados, arquivo=arquivo_excel, sheet_name='Bloco')
+                print(f"Total de {len(resultados)} linhas salvas no Excel")
             else:
                 print("Nenhuma linha encontrada para salvar")
-                        
+            
+            return resultados
+            
         except Exception as e:
             exc_type, exc_value, exc_tb = sys.exc_info()
             print(f"Error occurred: {str(e)[:100]}")
@@ -186,14 +337,16 @@ def extrair_dados_bloco(page):
     except Exception as e:
         exc_tb = sys.exc_info()
         print(f"❌Error occurred at line: {exc_tb.tb_lineno}")
-        print(f"{type(e).__name__} - {str(e)[:150]}")
+        print(f"{type(e).__name__} - {str(e)[:100]}")
         return None
 
 
 # --- Extrai os processos das propostas ---
-def extrair_dados_propostas(page):
+def extrair_dados_propostas(page, arquivo_excel: str):
     """Extract data from proposals"""
     try:
+        print(f"🔄 Iniciando processo de scraping - Propostas")
+
         # Wait for block table
         table_bloco = page.wait_for_selector('#tblBlocos tbody', timeout=7000)
         linhas_bloco = table_bloco.query_selector_all('tr')
@@ -206,6 +359,7 @@ def extrair_dados_propostas(page):
                 table_bloco = page.wait_for_selector('#tblBlocos tbody', timeout=7000)
                 linhas_bloco = table_bloco.query_selector_all('tr')
                 if idx >= len(linhas_bloco):
+                    print(f"⚠️ Row {idx} not available after refresh, skipping")
                     continue
 
                 linha = linhas_bloco[idx]
@@ -216,6 +370,7 @@ def extrair_dados_propostas(page):
                 numero = cells[1].text_content().strip() if cells[1] else ''
                 link = cells[1].query_selector('a')
                 if not link:
+                    print(f"⚠️ No link found for row {idx} ({numero}), skipping")
                     continue
 
                 link.click()
@@ -240,13 +395,13 @@ def extrair_dados_propostas(page):
                 if sem_registro:
                     linha_dados = {
                         'Número': numero,
-                        'Seq.': '',
-                        'Processo': '',
-                        'Documento': '',
-                        'Tipo': '',
-                        'Assinaturas': '',
-                        'Anotações': '',
-                        'Ações': '',
+                        'Seq.': 'Nenhum registro encontrado.',
+                        'Processo': 'Nenhum registro encontrado.',
+                        'Documento': 'Nenhum registro encontrado.',
+                        'Tipo': 'Nenhum registro encontrado.',
+                        'Assinaturas': 'Nenhum registro encontrado.',
+                        'Anotações': 'Nenhum registro encontrado.',
+                        'Ações': 'Nenhum registro encontrado.',
                     }
                     resultados.append(linha_dados)
                     page.go_back()
@@ -296,9 +451,8 @@ def extrair_dados_propostas(page):
                 continue
 
         if resultados:
-            print(f"Total de {len(resultados)} linhas encontradas nas PROPOSTAS")
-            return pd.DataFrame(resultados)
-
+            salvar_linha_excel(buffer_dados=resultados, arquivo=arquivo_excel, sheet_name='Processos')
+            print(f"Total de {len(resultados)} linhas salvas no Excel")
         else:
             print("Nenhuma linha encontrada para salvar")
 
@@ -325,7 +479,9 @@ def wait_for_frames_to_load(page, expected_frame_names=None, timeout=30000):
     Returns:
         List of available frames
     """
-    try:        
+    try:
+        print("\n⏳ Waiting for frames to load...")
+        
         start_time = time.time()
         frames_loaded = False
         last_frame_count = 0
@@ -336,6 +492,7 @@ def wait_for_frames_to_load(page, expected_frame_names=None, timeout=30000):
                 current_frame_count = len(frames)
                 
                 if current_frame_count != last_frame_count:
+                    print(f"  Checking frames... Found {current_frame_count} frame(s)")
                     last_frame_count = current_frame_count
                 
                 # If we have expected frames, check if they're all there
@@ -351,13 +508,19 @@ def wait_for_frames_to_load(page, expected_frame_names=None, timeout=30000):
                             continue
                     
                     if len(found_frames) == len(expected_frame_names):
+                       #print(f"✅ All expected frames found: {found_frames}")
                         frames_loaded = True
                         break
+                    else:
+                        # Only print every 3 seconds to avoid spam
+                        if int(time.time() - start_time) % 1000 == 0:
+                            print(f"  Found {len(found_frames)}/{len(expected_frame_names)} frames: ###{found_frames}")
                 else:
                     # If no expected frames, wait for at least the iframes in DOM
                     try:
                         iframes = page.query_selector_all('iframe')
                         if len(iframes) > 0 and len(frames) > 1:
+                            #print(f"✅ Found {len(frames)} frames and {len(iframes)} iframes")
                             frames_loaded = True
                             break
                     except Exception as e:
@@ -368,7 +531,7 @@ def wait_for_frames_to_load(page, expected_frame_names=None, timeout=30000):
                 
             except Exception as e:
                 exc_type, exc_value, exc_tb = sys.exc_info()
-                print(f"⚠️ Error checking frames: {str(e)[:50]}")
+                print(f"⚠️ Error checking frames: {str(e)[:100]}")
                 print(f"Error type: {exc_type.__name__}")
                 print(f"Line number: {exc_tb.tb_lineno}")
                 time.sleep(1)
@@ -394,7 +557,7 @@ def wait_for_frames_to_load(page, expected_frame_names=None, timeout=30000):
                 
                 # Try to trigger frame loading by interacting with the page
                 try:
-                    page.evaluate(r"""
+                    page.evaluate("""
                         () => {
                             // Try to trigger any lazy loading
                             window.dispatchEvent(new Event('scroll'));
@@ -410,6 +573,7 @@ def wait_for_frames_to_load(page, expected_frame_names=None, timeout=30000):
                             return iframes.length;
                         }
                     """)
+                    print("🔄 Triggered events to force frame loading")
                     time.sleep(2)
                 except Exception as e:
                     exc_type, exc_value, exc_tb = sys.exc_info()
@@ -430,6 +594,7 @@ def wait_for_frames_to_load(page, expected_frame_names=None, timeout=30000):
                                 found_frames.append(name)
                         
                         if len(found_frames) == len(expected_frame_names):
+                            print(f"✅ All expected frames found after forcing: {found_frames}")
                             frames_loaded = True
                 except Exception as e:
                     exc_type, exc_value, exc_tb = sys.exc_info()
@@ -458,6 +623,12 @@ def wait_for_frames_to_load(page, expected_frame_names=None, timeout=30000):
                     else:
                         missing.append(name)
                 
+                if missing:
+                    print(f"⚠️ Missing frames: {missing}")
+                    print(f"✅ Available frames: {available}")
+                else:
+                    print(f"✅ All expected frames available: {available}")
+            
             return final_frames
             
         except Exception as e:
@@ -483,6 +654,7 @@ def wait_for_frames_to_load(page, expected_frame_names=None, timeout=30000):
 # --- Captura exclusivamente o iframe "child" onde está a tabela ---
 def wait_for_ifr_visualizacao_frame(page, timeout=20000):
     """Wait for the ifrVisualizacao frame to appear and return it."""
+    print("⏳ Waiting for ifrVisualizacao frame...")
     deadline = time.time() + timeout / 1000.0
     last_error = None
 
@@ -491,12 +663,14 @@ def wait_for_ifr_visualizacao_frame(page, timeout=20000):
             # Direct frame by name or id
             frame = page.frame(name='ifrVisualizacao')
             if frame and not frame.is_detached():
+                #print(f"✅ Found ifrVisualizacao frame by name: {frame.url}")
                 return frame
 
             iframe_element = page.query_selector('iframe[name="ifrVisualizacao"], iframe#ifrVisualizacao')
             if iframe_element:
                 frame = iframe_element.content_frame()
                 if frame and not frame.is_detached():
+                    #print(f"✅ Found ifrVisualizacao via iframe element: {frame.url}")
                     return frame
 
             parent_iframe = page.query_selector('iframe[name="ifrConteudoVisualizacao"], iframe#ifrConteudoVisualizacao')
@@ -507,12 +681,14 @@ def wait_for_ifr_visualizacao_frame(page, timeout=20000):
                     if child_iframe:
                         frame = child_iframe.content_frame()
                         if frame and not frame.is_detached():
+                            #print(f"✅ Found ifrVisualizacao inside parent frame: {frame.url}")
                             return frame
 
             for f in page.frames:
                 if f.is_detached():
                     continue
                 if f.name == 'ifrVisualizacao' or 'visualizacao' in str(f.name).lower() or 'arvore_processar_html' in f.url:
+                   #print(f"✅ Found ifrVisualizacao by frame list: name={f.name} url={f.url}")
                     return f
 
         except Exception as e:
@@ -521,7 +697,7 @@ def wait_for_ifr_visualizacao_frame(page, timeout=20000):
         time.sleep(0.5)
 
     if last_error:
-        print(f"⚠️ wait_for_ifr_visualizacao_frame timeout. Last error: {type(last_error).__name__}: {str(last_error)[:50]}")
+        print(f"⚠️ wait_for_ifr_visualizacao_frame timeout. Last error: {type(last_error).__name__}: {str(last_error)[:120]}")
     else:
         print("⚠️ wait_for_ifr_visualizacao_frame timeout without finding the frame.")
     return None
@@ -532,27 +708,38 @@ def extract_history_from_nested_frame(page, numero_processo) -> list[dict]:
     """Extract history table from the nested ifrVisualizacao frame"""
     
     try:
+        print(f"\n📋 Extracting history for: {numero_processo}")
+
         viz_frame = wait_for_ifr_visualizacao_frame(page, timeout=20000)
         if not viz_frame:
             print("❌ ifrVisualizacao frame not found")
             print("\nAll available frames:")
+            for f in page.frames:
+                #print(f"  - {f.name}: {f.url[:80]}")
+                continue
             return None
+
+        print("✅ Found ifrVisualizacao frame")
+        #print(f"   URL: {viz_frame.url}")
 
         # Wait for content inside ifrVisualizacao
         try:
             viz_frame.wait_for_selector('table, .infraAreaTelad, #tblHistorico, div.infraAreaTelad, tbody', timeout=15000)
+            print("✓ Content loaded in ifrVisualizacao")
             if viz_frame.is_detached():
+                print("⚠️ ifrVisualizacao frame detached after load; reacquiring")
                 viz_frame = wait_for_ifr_visualizacao_frame(page, timeout=10000)
                 if not viz_frame:
                     return None
         except Exception as e:
+            print(f"⚠️ Content may not be fully loaded: {type(e).__name__} {str(e)[:120]}")
             viz_frame = wait_for_ifr_visualizacao_frame(page, timeout=10000)
             if not viz_frame:
                 return None
 
         # Step 6: Extract the table data
         try:
-            js_source = r"""
+            js_source = """
             () => {
                 const result = [];
                 
@@ -635,7 +822,7 @@ def extract_history_from_nested_frame(page, numero_processo) -> list[dict]:
             viz_frame = wait_for_ifr_visualizacao_frame(page, timeout=10000)
             if not viz_frame:
                 return None
-            js_source = r"""
+            js_source = """
             () => {
                 const result = [];
                 
@@ -711,41 +898,56 @@ def extract_history_from_nested_frame(page, numero_processo) -> list[dict]:
         """
             results = viz_frame.evaluate(js_source.replace('PROCESSO_PLACEHOLDER', json.dumps(numero_processo)))
 
-        #print(f"✅ DEBUGG !!! Extracted {len(results)} history entries for process {numero_processo}  DEBUGG !!!")
-            
-        return pd.DataFrame(results)
+        print(f"✅ Extracted {len(results)} history entries")
+        
+        if results:
+            for entry in results[:3]:  # Show first 3 entries
+                print(f"  {entry['Data/Hora']} | {entry['Unidade']} | {entry['Usuário']} | {entry['Descrição'][:50]}")
+        
+        return results
         
     except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"❌ Error extracting history: {str(e)[:100]}")
+        print(f"Error type: {exc_type.__name__}")
+        print(f"Line number: {exc_tb.tb_lineno}")
         return None
 
 
 # --- Extrai detalhes das propostas (andamentos) ---
-def get_proposal_details(page, sheet_name: str, processos=None ):
+def get_proposal_details(page, arquivo_excel: str, sheet_name: str):
     """Extract proposal tracking details and save to specified sheet_name"""
     
-    columns = ['Processo', 'Data/Hora', 'Unidade', 'Usuário', 'Descrição']
+    try:
+        # Read Excel file
+        if sheet_name == 'Andamento':
+            df = pd.read_excel(arquivo_excel, dtype=str, sheet_name='Processos')
+            pattern = r'^\d{5}\.\d{6}/\d{4}-\d{2}$'
+            df = df[df['Processo'].str.match(pattern, na=False)]
+            df = df.drop_duplicates(subset=['Processo'])
+            numeros_processo = df['Processo'].tolist()
+        else:
+            page.click('#lnkControleProcessos')
+            source, new_processes = extract_received_processos(page=page)
+            numeros_processo = find_missing_processos(arquivo_excel,
+                                                     source=source,
+                                                     target_sheet='Processos')
+    except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"Error reading Excel: {str(e)[:100]}")
+        print(f"Error type: {exc_type.__name__}")
+        print(f"Line number: {exc_tb.tb_lineno}")
+        return
     
-    if sheet_name == 'Andamento':
-        df = processos
-        pattern = r'^\d{5}\.\d{6}/\d{4}-\d{2}$'
-        df = df[df['Processo'].str.match(pattern, na=False)]
-        df = df.drop_duplicates(subset=['Processo'])
-        numeros_processo = df['Processo'].tolist()
-        print(f"🔎 Found {len(numeros_processo)} unique process numbers in 'Andamento' sheet")
-    else:
-        page.click('#lnkControleProcessos')
-        source, new_processes = extract_received_processos(page=page)
-        numeros_processo = source['Processo'].tolist()
-        print(source)
-        print(f"🔎 Found {len(numeros_processo)} process numbers in the source sheet")
-        
-   
-    all_results_df = pd.DataFrame(columns=columns)
+    all_results = []
     for numero_processo in numeros_processo:
         try:
             wait_for_frames_to_load
+            print(f"\n📋 Processando: {numero_processo}")
             
             # Go to default content (top frame)
+            # Playwright handles frames differently - we need to find the main frame
+            
             # Find search field
             try:
                 # First, try to find on main page
@@ -763,7 +965,7 @@ def get_proposal_details(page, sheet_name: str, processos=None ):
                 time.sleep(0.75)
 
             main_page = page 
-            wait_for_frames_to_load(page=page, expected_frame_names=None, timeout=30000) 
+            frames = wait_for_frames_to_load(page=page, expected_frame_names=None, timeout=30000) 
             
             # Find and switch to iframeArvore
             frame_arvore = page.frame(name='ifrArvore')
@@ -787,24 +989,18 @@ def get_proposal_details(page, sheet_name: str, processos=None ):
                 attempt = 0
                 while attempt <= 3:
                     resultados = extract_history_from_nested_frame(page=page, numero_processo=numero_processo)
-                    if len(resultados) > 0:
-                        df_resultados = resultados.copy()
-                        # Ensure columns match
-                        for col in columns:
-                            if col not in df_resultados.columns:
-                                df_resultados[col] = ''
-                        
-                        df_resultados = df_resultados[columns]
-                        all_results_df = pd.concat([all_results_df, df_resultados], ignore_index=True)
-
-                        #print(f"✅ {len(resultados)} registros de andamento coletados para {numero_processo}")
+                    
+                    if resultados:
+                        all_results.extend(resultados)
+                        print(f"✅ {len(resultados)} registros de andamento coletados para {numero_processo}")
                         break
                     else:
                         time.sleep(1)
                         attempt += 1
-                        
+                        print(f"⚠️ Nenhum andamento encontrado para {numero_processo}.\nTentando novamento, tentativa número{attempt}")
                 
             except Exception as e:
+                print(f"⚠️ Error extracting history for {numero_processo}: {str(e)[:100]}")
                 continue
                 
         except Exception as e:
@@ -813,26 +1009,16 @@ def get_proposal_details(page, sheet_name: str, processos=None ):
             print(f"Error type: {exc_type.__name__}")
             print(f"Line number: {exc_tb.tb_lineno}")
             sys.exit()
-
     if not  sheet_name == 'Andamento':
         if new_processes:
-            df_new = pd.DataFrame(new_processes)
-            # Ensure columns match
-            for col in columns:
-                if col not in df_new.columns:
-                    df_new[col] = ''
-            
-            # Keep only the needed columns
-            df_new = df_new[columns]
-            # Concatenate to main DataFrame
-            all_results_df = pd.concat([all_results_df, df_new], ignore_index=True)
+            all_results.extend(new_processes)
             print(f"✅ Adicionados {len(new_processes)} processos não visualizados (vermelhos)")
 
-    if not all_results_df.empty:
-        return all_results_df
+    if all_results:
+        salvar_linha_excel(buffer_dados=all_results, arquivo=arquivo_excel, sheet_name=sheet_name)
+        print(f"✅ Total de {len(all_results)} registros salvos na planilha '{sheet_name}' do arquivo {arquivo_excel}")
     else:
         print(f"⚠️ Nenhum registro coletado. Nenhuma gravação realizada.")
-
 
 # --- Extrai os dados de cada processo ---
 def extract_received_processos(page) -> pd.DataFrame:
@@ -842,7 +1028,7 @@ def extract_received_processos(page) -> pd.DataFrame:
     """
     try:
         # Get all process numbers and filter out red ones in one go
-        result = page.evaluate(r'''
+        result = page.evaluate('''
             () => {
                 const rows = document.querySelectorAll('#tblProcessosRecebidos tbody tr');
                 const results = [];
@@ -895,6 +1081,7 @@ def extract_received_processos(page) -> pd.DataFrame:
         
         df = pd.DataFrame({'Processo': result['processos']})
 
+        print(f"✅ Extracted {len(df)} process numbers (skipped {result['skipped']} unviewed entries)")
         return df, skipped_as_dicts
 
     except Exception as e:
@@ -903,6 +1090,46 @@ def extract_received_processos(page) -> pd.DataFrame:
         print(f"Error type: {exc_type.__name__} at line {exc_tb.tb_lineno}")
         return pd.DataFrame(columns=['Processo'])
 
+# --- Filtra os processos que estão na planilha fonte porém não estão no planilha alvo ---
+def find_missing_processos(arquivo_excel: str, source: str, target_sheet: str = 'Processos', filter: bool = False) -> list:
+    """Return list of `Processo` values present in `source_sheet` but not in `target_sheet`.
+
+    Args:
+        arquivo_excel: path to the Excel file
+        source_sheet: sheet name to compare from (contains candidate `Processo` values)
+        target_sheet: sheet to compare against (defaults to 'Processos')
+
+    Returns:
+        List of Processo strings that are in source_sheet but missing from target_sheet.
+    """
+    try:
+        # Read both sheets
+        df_target = pd.read_excel(arquivo_excel, dtype=str, sheet_name=target_sheet)
+
+        if 'Processo' not in source.columns:
+            print(f"⚠️ 'Processo' column not found in source sheet '{source}'")
+            return []
+        if 'Processo' not in df_target.columns:
+            print(f"⚠️ 'Processo' column not found in target sheet '{target_sheet}'")
+            return []
+
+        src_set = set(source['Processo'].dropna().astype(str).str.strip().unique())
+
+        tgt_set = set(df_target['Processo'].dropna().astype(str).str.strip().unique())
+        # Only use if filter is required
+        if filter:
+            missing = sorted(list(src_set - tgt_set))
+        else:
+            missing = sorted(list(src_set))
+
+        print(f"🔎 Found {len(missing)} Processo(s)  missing from '{target_sheet}'")
+        return missing
+
+    except Exception as e:
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"❌ Error comparing sheets: {str(e)[:100]}")
+        print(f"Error type: {exc_type.__name__} at line {exc_tb.tb_lineno}")
+        return []
 
 # --- Debugger para os Iframes ---
 def debug_all_frames(page, single_frame:str=''):
@@ -999,6 +1226,7 @@ def confere_iframe(page, iframe_id: str, dbg: bool = False):
     try:
         page.wait_for_selector('iframe', timeout=7000)
     except:
+        print("No iframes found on page")
         return
     
     if dbg:
@@ -1011,11 +1239,13 @@ def confere_iframe(page, iframe_id: str, dbg: bool = False):
         if iframe_element:
             frame = page.frame(name=iframe_id)
             if frame:
+                print(f"✓ Switched to frame: {iframe_id}")
                 return frame
         
         # Try by URL pattern
         for frame in page.frames:
             if 'conteudo' in frame.url or 'procedimento' in frame.url:
+                print(f"✓ Found content frame: {frame.url}")
                 return frame
         
         print(f"⚠️ Could not find frame: {iframe_id}")
@@ -1027,120 +1257,57 @@ def confere_iframe(page, iframe_id: str, dbg: bool = False):
 
 
 # --- Salva os dados no excel ---
-def salvar_excel(arquivo: str | Path, dados) -> bool:
-    """
-    Save data from dataclass to Excel file, overwriting all sheets
-    
-    Args:
-        arquivo: Path to Excel file
-        dados: WorkbookState instance with bloco, processos, andamento, controle attributes
-    
-    Returns:
-        bool: True if successful, False otherwise
-    """
-
-    SHEET_CONFIG = {
-    'Bloco': {
-        'columns': ['Número', 'Sinalizações', 'Atribuição', 'Estado', 
-                   'Geradora', 'Disponibilização', 'Grupo', 'Descrição', 'Ações']
-    },
-    'Processos': {
-        'columns': ['Número', 'Seq.', 'Processo', 'Documento', 'Tipo', 
-                   'Assinaturas', 'Anotações', 'Ações']
-    },
-    'Andamento': {
-        'columns': ['Processo', 'Data/Hora', 'Unidade', 'Usuário', 'Descrição']
-    },
-    'Controle de Processo': {
-        'columns': ['Processo', 'Data/Hora', 'Unidade', 'Usuário', 'Descrição']
-    }
-    }
-
-    total_rows = 0
-
+def salvar_linha_excel(buffer_dados: list, arquivo: str | Path, sheet_name: str):
+    """Save data to Excel file"""
     try:
-        arquivo = Path(arquivo)
+        limpar_planilha(arquivo_fonte=arquivo, sheet_name=sheet_name)
         
-        # Get data from dataclass (works with __init__ attributes)
-        sheet_mapping = {
-            'Bloco': getattr(dados, 'bloco', None),
-            'Processos': getattr(dados, 'processos', None),
-            'Andamento': getattr(dados, 'andamento', None),
-            'Controle de Processo': getattr(dados, 'controle', None)
-        }
+        if sheet_name == 'Bloco':
+            colunas = ['Número', 'Sinalizações', 'Atribuição', 'Estado', 
+                       'Geradora', 'Disponibilização', 'Grupo', 'Descrição', 'Ações']
+        elif sheet_name == 'Processos':
+            colunas = ['Número', 'Seq.', 'Processo', 'Documento', 'Tipo', 
+                       'Assinaturas', 'Anotações', 'Ações']
+        elif sheet_name == 'Andamento':
+            colunas = ['Processo', 'Data/Hora', 'Unidade', 'Usuário', 'Descrição']
+        elif sheet_name == 'Controle de Processo':
+            colunas = ['Processo', 'Data/Hora', 'Unidade', 'Usuário', 'Descrição']
         
-        # Debug: Print what we received
-        print("\n📊 Data received in salvar_excel:")
-        for sheet_name, df in sheet_mapping.items():
-            if df is not None and isinstance(df, pd.DataFrame) and not df.empty:
-                print(f"  ✅ {sheet_name}: {len(df)} rows, {len(df.columns)} columns")
-            elif df is not None and isinstance(df, pd.DataFrame) and df.empty:
-                print(f"  ⚠️  {sheet_name}: Empty DataFrame")
+        # Load existing sheets
+        if os.path.exists(arquivo):
+            with pd.ExcelFile(arquivo) as xlsx:
+                sheets = {sheet: pd.read_excel(arquivo, sheet_name=sheet) 
+                         for sheet in xlsx.sheet_names}
+            
+            if sheet_name in sheets:
+                df_target = sheets[sheet_name]
             else:
-                print(f"  ❌ {sheet_name}: {type(df).__name__ if df is not None else 'None'}")
-
-        # Prepare final data for all sheets
-        final_data = {}
+                df_target = pd.DataFrame(columns=colunas)
+        else:
+            sheets = {}
+            df_target = pd.DataFrame(columns=colunas)
         
-        for sheet_name, df in sheet_mapping.items():
-            # Get expected columns for this sheet
-            expected_cols = SHEET_CONFIG[sheet_name]['columns']
-            
-            # Check if df is a valid DataFrame
-            if df is not None and isinstance(df, pd.DataFrame):
-                # Copy to avoid modifying original
-                df_clean = df.copy()
-                
-                # Add missing columns with empty strings
-                for col in expected_cols:
-                    if col not in df_clean.columns:
-                        df_clean[col] = ''
-                
-                # Keep only expected columns in correct order
-                # Only keep columns that exist in the DataFrame
-                existing_cols = [col for col in expected_cols if col in df_clean.columns]
-                if existing_cols:
-                    df_clean = df_clean[existing_cols]
-                else:
-                    df_clean = pd.DataFrame(columns=expected_cols)
-            else:
-                # Create empty dataframe with correct columns
-                df_clean = pd.DataFrame(columns=expected_cols)
-            
-            final_data[sheet_name] = df_clean
-            total_rows += len(df_clean)
-            
-            print(f"✅ {len(df_clean)} linhas preparadas para '{sheet_name}'")
+        # Create new rows
+        novas_linhas = []
+        for linha in buffer_dados:
+            nova_linha = {col: linha.get(col, '') for col in colunas}
+            novas_linhas.append(nova_linha)
         
-        # Ensure all sheets exist even if not provided
-        for sheet_name in SHEET_CONFIG.keys():
-            if sheet_name not in final_data:
-                final_data[sheet_name] = pd.DataFrame(columns=SHEET_CONFIG[sheet_name]['columns'])
-                print(f"ℹ️  Criada planilha vazia: '{sheet_name}'")
+        # Combine
+        df_final = pd.concat([df_target, pd.DataFrame(novas_linhas)], ignore_index=True)
+        sheets[sheet_name] = df_final
         
-        # Create directory if it doesn't exist
-        arquivo.parent.mkdir(parents=True, exist_ok=True)
+        # Save
+        with pd.ExcelWriter(arquivo, engine='openpyxl') as writer:
+            for sheet, df in order_sheets(sheets):
+                df.to_excel(writer, sheet_name=sheet, index=False)
         
-        # Save all sheets to file (overwrites existing file)
-        with pd.ExcelWriter(arquivo, engine='openpyxl', mode='w') as writer:
-            for sheet_name, df in final_data.items():
-                df.to_excel(writer, sheet_name=sheet_name, index=False)
-        
-        # Success summary
-        print(f"\n✅ Dados salvos com sucesso em {arquivo}")
-        print(f"   Total: {total_rows} linhas em {len(final_data)} planilhas")
-        
+        print(f"✅ {len(buffer_dados)} linhas salvas em '{sheet_name}' no arquivo {arquivo}")
         return True
         
     except Exception as e:
-        exc_type, exc_value, exc_tb = sys.exc_info()
-        print(f"❌ Erro ao salvar no Excel: {type(e).__name__}")
-        print(f"   Linha: {exc_tb.tb_lineno}")
-        print(f"   Mensagem: {str(e)[:100]}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ Erro ao salvar no Excel: {type(e).__name__}\n{str(e)[:100]}")
         return False
-    
 
 # --- Ordena as planilhas em sequência específica ---
 def order_sheets(sheets: dict) -> list[tuple[str, object]]:
@@ -1156,308 +1323,179 @@ def order_sheets(sheets: dict) -> list[tuple[str, object]]:
             ordered.append((sheet_name, sheet_df))
     return ordered
 
-
-# --- Salva dados concatenados em Excel com data para avaliação de performance diária ---
-def salvar_excel_com_data(arquivo: str | Path, dados) -> bool:
-    """
-    Save data from dataclass to Excel file with daily timestamp in filename.
-    If file for today exists, it concatenates new data with existing data.
+# --- Deleta todos os dados no arquivo de saída ---
+def limpar_planilha(arquivo_fonte: str | Path, sheet_name: str):
+    """Clear sheet data while preserving headers"""
     
-    Args:
-        arquivo: Base path for the Excel file (will have date added)
-        dados: WorkbookState instance with bloco, processos, andamento, controle attributes
+    if sheet_name == 'Bloco':
+        headers = ['Número', 'Sinalizações', 'Atribuição', 'Estado', 
+                   'Geradora', 'Disponibilização', 'Grupo', 'Descrição', 'Ações']
+    elif sheet_name == 'Processos':
+        headers = ['Número', 'Seq.', 'Processo', 'Documento', 'Tipo', 
+                   'Assinaturas', 'Anotações', 'Ações']
+    elif sheet_name == 'Andamento':
+        headers = ['Processo', 'Data/Hora', 'Unidade', 'Usuário', 'Descrição']
+    elif sheet_name == 'Controle de Processo':
+        headers = ['Processo', 'Data/Hora', 'Unidade', 'Usuário', 'Descrição']
     
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    
-    def _get_id_columns(sheet_name: str) -> list:
-        """
-        Get the columns that uniquely identify a row for each sheet.
-        Used for deduplication when concatenating data.
-        """
-        ID_COLUMNS = {
-            'Bloco': ['Número'],  # Process number should be unique in block
-            'Processos': ['Processo', 'Seq.'],  # Process + sequence number
-            'Andamento': ['Processo', 'Data/Hora', 'Descrição'],  # Unique entry in history
-            'Controle de Processo': ['Processo', 'Data/Hora', 'Descrição']  # Unique entry in history
-        }
-        
-        return ID_COLUMNS.get(sheet_name, [])
-
-    SHEET_CONFIG = {
-        'Bloco': {
-            'columns': ['Número', 'Sinalizações', 'Atribuição', 'Estado', 
-                       'Geradora', 'Disponibilização', 'Grupo', 'Descrição', 'Ações']
-        },
-        'Processos': {
-            'columns': ['Número', 'Seq.', 'Processo', 'Documento', 'Tipo', 
-                       'Assinaturas', 'Anotações', 'Ações']
-        },
-        'Andamento': {
-            'columns': ['Processo', 'Data/Hora', 'Unidade', 'Usuário', 'Descrição']
-        },
-        'Controle de Processo': {
-            'columns': ['Processo', 'Data/Hora', 'Unidade', 'Usuário', 'Descrição']
-        }
-    }
-    
-    total_rows = 0
-    new_rows = 0
-    existing_rows = 0
+    if not os.path.exists(arquivo_fonte):
+        print(f"📁 File not found: {arquivo_fonte}")
+        print(f"📝 Creating new file with sheet '{sheet_name}'...")
+        try:
+            empty_df = pd.DataFrame(columns=headers)
+            empty_df.to_excel(arquivo_fonte, sheet_name=sheet_name, index=False)
+            print(f"✅ File created with sheet '{sheet_name}'")
+            return True
+        except Exception as e:
+            print(f"❌ Error creating file: {type(e).__name__}.\nMSG: {str(e)[:100]}")
+            return False
     
     try:
-        # Convert to Path object
-        arquivo = Path(arquivo)
+        with pd.ExcelFile(arquivo_fonte) as xlsx:
+            sheets = {sheet: pd.read_excel(arquivo_fonte, sheet_name=sheet) 
+                     for sheet in xlsx.sheet_names}
         
-        # Generate date stamp (YYYYMMDD)
-        date_stamp = datetime.now().strftime("%Y%m%d")
-        
-        # Create the filename with date
-        base_name = arquivo.stem
-        extension = arquivo.suffix
-        daily_filename = arquivo.parent / f"{base_name}_{date_stamp}{extension}"
-        
-        #print(f"📁 Daily file: {daily_filename}")
-        
-        # Get current data from dataclass
-        sheet_mapping = {
-            'Bloco': getattr(dados, 'bloco', None),
-            'Processos': getattr(dados, 'processos', None),
-            'Andamento': getattr(dados, 'andamento', None),
-            'Controle de Processo': getattr(dados, 'controle', None)
-        }
-        
-        # Check if daily file exists
-        if daily_filename.exists():
-            #print(f"📂 Daily file exists. Loading existing data...")
-            
-            # Load existing data from all sheets
-            existing_data = {}
-            try:
-                with pd.ExcelFile(daily_filename) as xls:
-                    for sheet_name in SHEET_CONFIG.keys():
-                        if sheet_name in xls.sheet_names:
-                            df_existing = pd.read_excel(xls, sheet_name=sheet_name)
-                            existing_data[sheet_name] = df_existing
-                            existing_rows += len(df_existing)
-                            #print(f"  📊 {sheet_name}: {len(df_existing)} existing rows")
-                        else:
-                            existing_data[sheet_name] = pd.DataFrame(columns=SHEET_CONFIG[sheet_name]['columns'])
-            except Exception as e:
-                print(f"⚠️ Could not read existing file: {e}")
-                existing_data = {}
+        if sheet_name in sheets:
+            empty_df = pd.DataFrame(columns=headers)
+            sheets[sheet_name] = empty_df
+            print(f"🗑️ All data deleted from sheet '{sheet_name}'")
         else:
-            #print(f"📄 Daily file does not exist. Creating new file...")
-            existing_data = {}
+            empty_df = pd.DataFrame(columns=headers)
+            sheets[sheet_name] = empty_df
+            print(f"📝 Sheet '{sheet_name}' not found. Creating new sheet with headers only.")
         
-        # Prepare final data for all sheets
-        final_data = {}
+        with pd.ExcelWriter(arquivo_fonte, engine='openpyxl') as writer:
+            for sheet, df in order_sheets(sheets):
+                df.to_excel(writer, sheet_name=sheet, index=False)
         
-        for sheet_name, df in sheet_mapping.items():
-            # Get expected columns for this sheet
-            expected_cols = SHEET_CONFIG[sheet_name]['columns']
-            
-            # Clean the new data
-            if df is not None and isinstance(df, pd.DataFrame):
-                df_clean = df.copy()
-                
-                # Add missing columns with empty strings
-                for col in expected_cols:
-                    if col not in df_clean.columns:
-                        df_clean[col] = ''
-                
-                # Keep only expected columns
-                existing_cols = [col for col in expected_cols if col in df_clean.columns]
-                if existing_cols:
-                    df_clean = df_clean[existing_cols]
-                else:
-                    df_clean = pd.DataFrame(columns=expected_cols)
-            else:
-                df_clean = pd.DataFrame(columns=expected_cols)
-            
-            # Get existing data for this sheet
-            df_existing = existing_data.get(sheet_name, pd.DataFrame(columns=expected_cols))
-            
-            # Ensure existing data has all columns
-            for col in expected_cols:
-                if col not in df_existing.columns:
-                    df_existing[col] = ''
-            
-            # Keep only expected columns in existing data
-            df_existing = df_existing[expected_cols] if not df_existing.empty else pd.DataFrame(columns=expected_cols)
-            
-            # Check for duplicates and concatenate
-            if not df_clean.empty:
-                # Determine which columns to use for deduplication
-                id_columns = _get_id_columns(sheet_name)
-                
-                if not df_existing.empty:
-                    # Combine existing and new data
-                    combined = pd.concat([df_existing, df_clean], ignore_index=True)
-                    
-                    # Remove duplicates based on ID columns
-                    if id_columns:
-                        # Keep first occurrence (existing data)
-                        combined = combined.drop_duplicates(subset=id_columns, keep='first')
-                        new_rows_added = len(df_clean) - (len(combined) - len(df_existing))
-                    else:
-                        # If no ID columns, just concatenate all
-                        combined = df_clean
-                        new_rows_added = len(df_clean)
-                    
-                    final_data[sheet_name] = combined
-                    new_rows += new_rows_added
-                    total_rows += len(combined)
-                    
-                else:
-                    # No existing data, just use new data
-                    final_data[sheet_name] = df_clean
-                    new_rows += len(df_clean)
-                    total_rows += len(df_clean)
-            else:
-                # No new data, keep existing
-                final_data[sheet_name] = df_existing
-                total_rows += len(df_existing)
-        
-        # Ensure all sheets exist
-        for sheet_name in SHEET_CONFIG.keys():
-            if sheet_name not in final_data:
-                final_data[sheet_name] = pd.DataFrame(columns=SHEET_CONFIG[sheet_name]['columns'])
-        
-        # Create directory if it doesn't exist
-        daily_filename.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Save all sheets to file
-        with pd.ExcelWriter(daily_filename, engine='openpyxl', mode='w') as writer:
-            for sheet_name, df in final_data.items():
-                df.to_excel(writer, sheet_name=sheet_name, index=False)
-                
+        print(f"✅ Sheet '{sheet_name}' cleared successfully")
         return True
         
     except Exception as e:
-        exc_type, exc_value, exc_tb = sys.exc_info()
-        print(f"❌ Erro ao salvar no Excel com data: {type(e).__name__}")
-        print(f"   Linha: {exc_tb.tb_lineno}")
-        print(f"   Mensagem: {str(e)[:100]}")
-        import traceback
-        traceback.print_exc()
+        print(f"❌ Error clearing sheet: {type(e).__name__}.\nMSG: {str(e)[:100]}")
         return False
 
-
-# --- Seleciona caixas do SEi que são da SNEAELIS ---
-def selecionar_caixa_sei(page, caixa: str):
-    """Select the specified mailbox row in SEI by caixa text."""
-    paths = {
-        'ver caixas': 'xpath=/html/body/div[1]/nav/div/div[3]/div[2]/div[2]/div/a',
-        'tabela de caixas': 'xpath=/html/body/div[1]/div/div[2]/form/div[3]/table',
-    }
-
+# --- Concatena os dados no arquivo excel ---
+def append_to_excel_safe(df_new_data, arquivo_fonte, make_backup=True):
+    """Safely append new data to existing Excel file"""
     try:
-        caixa_dropdown = page.wait_for_selector(paths['ver caixas'], timeout=5000)
-        caixa_dropdown.click()
-
-        tabela = page.wait_for_selector(paths['tabela de caixas'], timeout=5000)
-        rows = tabela.query_selector_all('tr')
-
-        target_row = None
-        for row in rows:
-            row_text = row.inner_text().strip()
-            if caixa in row_text:
-                target_row = row
-                break
-
-        if not target_row:
-            print(f"❌ Caixa '{caixa}' não encontrada na tabela de caixas.")
-            sys.exit('Stoping script due to lack of "SEI caixa" link.')
-
-        radio_button = target_row.query_selector('input[type="radio"]')
-        if radio_button:
-            radio_button.click(force=True)
-            print(f"✅ Successfully selected radio button for '{caixa}'")
+        if make_backup and os.path.exists(arquivo_fonte):
+            backup_path = arquivo_fonte.replace('.xlsx', f'_backup.xlsx')
+            shutil.copy2(arquivo_fonte, backup_path)
+            print(f"💾 Backup created: {backup_path}")
+        
+        if os.path.exists(arquivo_fonte):
+            try:
+                df_existing = pd.read_excel(arquivo_fonte)
+                print(f"📖 Read {len(df_existing)} existing rows from {arquivo_fonte}")
+            except Exception as e:
+                print(f"⚠️ Could not read existing file: {type(e).__name__}.\nMSG: {str(e)[:100]}")
+                df_existing = pd.DataFrame()
         else:
-            print(f"❌ Radio button not found inside the row for '{caixa}'")
-            sys.exit('Stoping script due to lack of "SEI caixa" link.')
-
+            df_existing = pd.DataFrame()
+            print(f"📁 File doesn't exist yet, will create new")
+        
+        if not isinstance(df_new_data, pd.DataFrame):
+            try:
+                df_new_data = pd.DataFrame(df_new_data)
+                print(f"🔄 Converted new data to DataFrame")
+            except:
+                print(f"❌ Could not convert new data to DataFrame")
+                return False
+        
+        if not df_existing.empty:
+            if set(df_new_data.columns) != set(df_existing.columns):
+                print(f"⚠️ Column mismatch. Aligning new data to existing columns...")
+                df_new_data = df_new_data.reindex(columns=df_existing.columns)
+            
+            df_combined = pd.concat([df_existing, df_new_data], ignore_index=True)
+            print(f"🔗 Combined {len(df_existing)} existing + {len(df_new_data)} new rows")
+        else:
+            df_combined = df_new_data
+            print(f"📝 Using only new data ({len(df_new_data)} rows)")
+        
+        before_dedup = len(df_combined)
+        df_combined = df_combined.drop_duplicates()
+        after_dedup = len(df_combined)
+        if before_dedup > after_dedup:
+            print(f"🗑️ Removed {before_dedup - after_dedup} duplicate rows")
+        
+        df_combined.to_excel(arquivo_fonte, index=False)
+        print(f"✅ Data saved to {arquivo_fonte}")
+        print(f"   Total rows: {len(df_combined)} (Added {len(df_new_data)} new rows)")
+        
         return True
-
+        
     except Exception as e:
-        print(f"❌ Erro ao selecionar a caixa '{caixa}': {type(e).__name__} - {str(e)[:80]}")
-        traceback.print_exc()
-        sys.exit('Stoping script due to lack of "SEI caixa" link.')
-
+        print(f"❌ Error saving to Excel: {type(e).__name__}")
+        print(f"   Message: {str(e)[:100]}")
+        return False
 
 # --- Função principal ---
 def executar_scraping():
     """Main execution function"""
-    root_folder = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\Controle_SEI - SNEAELIS\Data_Bases")
-
-    caixas: list = ['MESP/SNEAELIS/DAPC', 'MESP/SNEAELIS/DAPC/CGAC', 'MESP/SNEAELIS/DAPC/CGAP', 'MESP/SNEAELIS/DAPC/CGAP-AP', 'MESP/SNEAELIS/DAPC/CGAP-CVTD', 'MESP/SNEAELIS/DAPC/CGAP-TEF', 'MESP/SNEAELIS/DEAELIS', 'MESP/SNEAELIS/DEAELIS/CGEALIS', 'MESP/SNEAELIS/DEAELIS/CGEE', 'MESP/SNEAELIS/DFP', 'MESP/SNEAELIS/DIE/CGGIE', 'MESP/SNEAELIS/DIE/CGIIE', 'MESP/SNEAELIS/DIE/CGPIE', 'MESP/SNEAELIS/GAB-Ass.Técnica', 'MESP/SNEAELIS/GAB-CMOF']
-
-    other_door = '9232'
+    
+    arquivo_fonte = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\webscraping\Consulta_SEi\dashboard_se\DB_sei_se.xlsx"
+    arquivo_destino = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\Controle_SEI\DB_sei_se.xlsx"
+    credenciais_arquivo = None
     
     page = None
     playwright = None
-
+    browser = None
+    
     try:
-        if isinstance(other_door, str) and other_door.isdigit():
-            page, playwright, browser = conectar_navegador_existente(int(other_door))
-        
-        if not page:
-            print("❌ Failed to connect to browser. Exiting.")
+        credenciais = carregar_credenciais(credenciais_arquivo)
+        if not credenciais:
             return
-        
-        for caixa_str in caixas:
-            state = WorkbookState()
 
-            parts = [part.strip() for part in str(caixa_str).split('/') if part.strip()]
-            if 'SNEAELIS' not in parts:
-                continue
+        page, playwright, browser = iniciar_navegador_headless(headless=True)
+        if not page:
+            print("❌ Não foi possível iniciar o navegador headless. Saindo.")
+            return
 
-            index_sne = parts.index('SNEAELIS')
-            values_after_sneaelis = parts[index_sne + 1:]
-            if not values_after_sneaelis:
-                continue
+        if not realizar_login_sei(page, credenciais):
+            print("❌ Login não concluído. Verifique as credenciais e execute novamente.")
+            return
 
-            file_name = '_'.join(values_after_sneaelis) + '.xlsx'
-            arquivo_path = root_folder / file_name
+        # Main loop
+        acessa_bloco_ass(page=page)
 
-            if not arquivo_path.exists():
-                with pd.ExcelWriter(arquivo_path, engine='openpyxl') as writer:
-                    pd.DataFrame().to_excel(writer, index=False)
-
+        while True:
             try:
-                selecionar_caixa_sei(page=page, caixa=caixa_str)
+                extrair_dados_bloco(page=page,
+                                     arquivo_excel=arquivo_fonte
+                                     )
                 
-                # Check current time to decide if we should save
-                acessa_bloco_ass(page=page)
-
-                state.bloco = extrair_dados_bloco(page=page)
+                extrair_dados_propostas(page=page,
+                                        arquivo_excel=arquivo_fonte
+                                        )
                 
-                state.processos = extrair_dados_propostas(page=page)
-
-                state.andamento = get_proposal_details(page=page,
-                                                        sheet_name='Andamento', processos=state.processos)
-
-                state.controle = get_proposal_details(page=page,
-                                                    sheet_name='Controle de Processo')
-
-                salvar_excel(arquivo=arquivo_path, dados=state)
-
-                """now = datetime.now()
-                current_hour = now.hour
-                should_save = 7 <= current_hour < 21
-
-                if should_save:
-                    salvar_excel_com_data(arquivo=arquivo_path, dados=state)"""
+                get_proposal_details(page=page,
+                                     arquivo_excel=arquivo_fonte,
+                                     sheet_name='Andamento'
+                                     )
                 
-                page.click('#lnkControleProcessos')
-
+                get_proposal_details(page=page,
+                                     arquivo_excel=arquivo_fonte,
+                                     sheet_name='Controle de Processo'
+                                     )
+                
+                try:
+                    page.click('#lnkControleProcessos')
+                except Exception:
+                    pass
+                shutil.copy(arquivo_fonte, arquivo_destino)
+                print(f"✅ Copied file to {arquivo_destino}")
+                
+                #break
+                print("⏳ Waiting 600 seconds before next run...")
+                time.sleep(600)
+                
             except Exception as e:
-                page.click('#lnkControleProcessos')
-                print(f"Error in main loop for {arquivo_path}: {type(e).__name__}")
+                print(f"Error in main loop: {type(e).__name__}")
                 print(f"Message: {str(e)[:100]}")
                 traceback.print_exc()
+                time.sleep(60)  # Wait a minute before retrying
                 
     except KeyboardInterrupt:
         print("\n🛑 Script interrupted by user")

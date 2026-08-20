@@ -29,12 +29,14 @@ class BudgetCalculator:
         self.changes_detected = False
     
     def _to_float(self, value) -> float:
+        import math
         if value is None:
             return 0.0
         if isinstance(value, str) and value.strip() == '':
             return 0.0
         try:
-            return float(value)
+            val = float(value)
+            return 0.0 if math.isnan(val) else val
         except (ValueError, TypeError):
             return 0.0
     
@@ -65,7 +67,7 @@ class BudgetCalculator:
         return self._check_change(credito_disp, comp_data, item='B')
     
     def item_c(self, comp_data, cdto_indisponivel, dsza_p_empenhada) -> float:
-        if not self._to_float(dsza_p_empenhada) == 0:
+        if self._to_float(dsza_p_empenhada) != 0:
             result = self._to_float(cdto_indisponivel) - self._to_float(dsza_p_empenhada)
             return self._check_change(result, comp_data, item='C')
         else:
@@ -91,19 +93,22 @@ def create_filter_column(df):
     def process_row(row):
         try:
             col0 = re.sub(r'\.0$', '', str(row.iloc[0])).strip() if 'nan' not in str(row.iloc[0]).lower() else ''
-        except:
+        except Exception as e:
+            print(f"Aviso: erro ao ler coluna 0 da planilha de comparação ({type(e).__name__}: {e}) — linha ignorada.")
             col0 = ''
         try:
             col1_raw = re.sub(r'\.0$', '', str(row.iloc[1])).strip()
             col1 = re.sub(r'\s+', '', col1_raw.split('-')[0]) if '-' in col1_raw else col1_raw
             col1 = col1 if 'nan' not in col1.lower() else ''
-        except:
+        except Exception as e:
+            print(f"Aviso: erro ao ler coluna 1 da planilha de comparação ({type(e).__name__}: {e}) — linha ignorada.")
             col1 = ''
         try:
             col2_raw = re.sub(r'\.0$', '', str(row.iloc[2])).strip()
             col2 = col2_raw[1] if len(col2_raw) > 1 else col2_raw[:-1]
             col2 = col2 if 'nan' not in col2.lower() else ''
-        except:
+        except Exception as e:
+            print(f"Aviso: erro ao ler coluna 2 da planilha de comparação ({type(e).__name__}: {e}) — linha ignorada.")
             col2 = ''
         return col0 + col1 + col2
     
@@ -209,7 +214,6 @@ def save_updates_without_breaking_formulas(dest_path: str, exact_columns: dict, 
                 if current_value != new_value:
                     ws.cell(row=excel_row, column=col_idx, value=new_value)
                     updates_count += 1
-                    print(f"Updated {filter_value} - Column {col_letter}: {current_value} -> {new_value}")
     
     wb.save(file_path)
     print(f"\n✅ {updates_count} cells updated")
@@ -220,7 +224,8 @@ class Application(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Atualizador de Orçamento - CGOFC")
-        self.geometry("700x500")
+        self.geometry("800x550")
+        self.minsize(700, 450)
         self.resizable(True, True)
         
         # Variáveis para caminhos dos arquivos
@@ -233,17 +238,18 @@ class Application(tk.Tk):
         # Frame para seleção de arquivos
         file_frame = tk.LabelFrame(self, text="Seleção de Arquivos", padx=10, pady=10)
         file_frame.pack(fill="x", padx=10, pady=5)
+        file_frame.columnconfigure(1, weight=1)  # Entry expands; button column stays fixed
         
         # Arquivo fonte
         tk.Label(file_frame, text="Arquivo fonte:").grid(row=0, column=0, sticky="w")
-        tk.Entry(file_frame, textvariable=self.source_path, width=80).grid(row=0, column=1, padx=5, pady=2)
+        tk.Entry(file_frame, textvariable=self.source_path).grid(row=0, column=1, sticky="ew", padx=5, pady=2)
         tk.Button(file_frame, text="Procurar", command=self.browse_source).grid(row=0, column=2, padx=5)
         tk.Label(file_frame, text="Exemplo: 1.1 - MESP-Ano 2025-UG 180077 - Por resultado primário - C*.xlsx", 
                  fg="gray", font=("Arial", 8)).grid(row=1, column=1, sticky="w", padx=5)
         
         # Arquivo para comparação
         tk.Label(file_frame, text="Arquivo para comparação:").grid(row=2, column=0, sticky="w", pady=(10,0))
-        tk.Entry(file_frame, textvariable=self.dest_path, width=80).grid(row=2, column=1, padx=5, pady=(10,0))
+        tk.Entry(file_frame, textvariable=self.dest_path).grid(row=2, column=1, sticky="ew", padx=5, pady=(10,0))
         tk.Button(file_frame, text="Procurar", command=self.browse_dest).grid(row=2, column=2, padx=5, pady=(10,0))
         tk.Label(file_frame, text="Exemplo: Execução Orçamento *.xlsx", 
                  fg="gray", font=("Arial", 8)).grid(row=3, column=1, sticky="w", padx=5)
@@ -338,6 +344,9 @@ class Application(tk.Tk):
         
         filter_final_df_Set = set(df_final_clean['filter_col'])
         
+        print(f"DEBUG: Unique filters in Destiny: {len(filter_final_df_Set)}")
+        print(f"DEBUG: Unique filters in Source: {len(set(df_data_source_clean['filter_col']))}")
+        
         source_columns = [
             'DOTACAO ATUALIZADA',
             'DESTAQUE CONCEDIDO',
@@ -360,14 +369,14 @@ class Application(tk.Tk):
         
         for filter_value in set(df_data_source_clean['filter_col']):
             if len(filter_value) != 6 or 'total' in filter_value.lower() or filter_value in ['', 'nan', 'none', None] or filter_value not in filter_final_df_Set:
+                if len(filter_value) == 6 and 'total' not in filter_value.lower() and filter_value not in ['', 'nan', 'none', None] and filter_value not in filter_final_df_Set:
+                    print(f"DEBUG SKIP: Filter '{filter_value}' exists in Source but NOT in Destiny.")
                 continue
             
             chunk_source = df_data_source_clean[df_data_source_clean['filter_col'] == filter_value].copy()
             chunk_final = df_final_clean[df_final_clean['filter_col'] == filter_value].copy()
             
-            print("\n" + "=" * 80)
-            print(f"   Processing filter value: {filter_value} with {len(chunk_source)} rows   ".center(80))
-            print("=" * 80)
+            print(f"Processando: {filter_value} ({len(chunk_source)} linha(s))...")
             
             field_names = [f.name for f in fields(ComparisonData)]
             values = chunk_final.iloc[:, 5:12]   # colunas B-F (índices 5 a 11)
@@ -430,16 +439,22 @@ class Application(tk.Tk):
             # Atualizar DataFrame final
             if result_a != comp_data.dotacao_atual:
                 df_final_clean.loc[df_final_clean['filter_col'] == filter_value, exact_columns['A']] = result_a
+                print(f"   [A UPDATE] {filter_value}: {comp_data.dotacao_atual} -> {result_a}")
             if result_b != comp_data.dotacao_disponivel:
                 df_final_clean.loc[df_final_clean['filter_col'] == filter_value, exact_columns['B']] = result_b
+                print(f"   [B UPDATE] {filter_value}: {comp_data.dotacao_disponivel} -> {result_b}")
             if result_c != comp_data.contingenciado:
                 df_final_clean.loc[df_final_clean['filter_col'] == filter_value, exact_columns['C']] = result_c
+                print(f"   [C UPDATE] {filter_value}: {comp_data.contingenciado} -> {result_c}")
             if result_d != comp_data.pre_empenhado:
                 df_final_clean.loc[df_final_clean['filter_col'] == filter_value, exact_columns['D']] = result_d
+                print(f"   [D UPDATE] {filter_value}: {comp_data.pre_empenhado} -> {result_d}")
             if result_e != comp_data.empenhado:
                 df_final_clean.loc[df_final_clean['filter_col'] == filter_value, exact_columns['E']] = result_e
+                print(f"   [E UPDATE] {filter_value}: {comp_data.empenhado} -> {result_e}")
             if result_f != comp_data.pago:
                 df_final_clean.loc[df_final_clean['filter_col'] == filter_value, exact_columns['F']] = result_f
+                print(f"   [F UPDATE] {filter_value}: {comp_data.pago} -> {result_f}")
         
         # Salvar as alterações no novo arquivo (no diretório de trabalho atual)
         output_dir = os.getcwd()

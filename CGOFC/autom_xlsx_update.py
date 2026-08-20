@@ -1,9 +1,10 @@
 import os
 import re
 import sys
-import glob
 import shutil
 import warnings
+import logging
+import math
 
 
 from datetime import datetime
@@ -25,6 +26,12 @@ warnings.filterwarnings(
 # here only to clean the terminal before running the main logic, can be removed
 os.system('cls' if os.name == 'nt' else 'clear')
 
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 # ==================================================
 # Classe com lógica de negócios para cálculos orçamentários
 # ==================================================
@@ -42,7 +49,8 @@ class BudgetCalculator:
         if isinstance(value, str) and value.strip() == '':
             return 0.0
         try:
-            return float(value)
+            val = float(value)
+            return 0.0 if math.isnan(val) else val
         except (ValueError, TypeError):
             return 0.0
     
@@ -51,15 +59,19 @@ class BudgetCalculator:
         comp_float = self._to_float(comp_data)
         calc_float = self._to_float(calculated)
 
+        if math.isnan(calc_float):
+            # Keep comparison data if calculation is NaN
+            return comp_float
+
         if (calc_float is None) and (comp_float is not None and comp_float > 0.0):
-            print(f'Calculado inválido para item {item} ({calculated}); mantendo comparação: {comp_float}')
             return comp_float
 
         elif calc_float == comp_float:
-            print(f'Dados do item {item} sem alteração')
             return comp_float
         
         elif calc_float != comp_float:
+            if math.isnan(calc_float):
+                return comp_float
             print(f'‼️ Dados do item {item} alterados: {comp_float} -> {calc_float}')
             self.changes_detected = True
             return calc_float
@@ -93,7 +105,10 @@ class BudgetCalculator:
     # ==================================================
     def item_c(self, comp_data, cdto_indisponivel, dsza_p_empenhada) -> float:
         """Crédito indisponível"""
-        if not self._to_float(dsza_p_empenhada) == 0:
+        print(f'Data from {comp_data}')
+        print(f'cdto_indisponivel: {cdto_indisponivel}')
+        print(f'dsza_p_empenhada: {dsza_p_empenhada}')
+        if self._to_float(dsza_p_empenhada) != 0:
             result = self._to_float(cdto_indisponivel) - self._to_float(dsza_p_empenhada)
             return self._check_change(result, comp_data, item='C')
     
@@ -128,7 +143,7 @@ class BudgetCalculator:
         return self._check_change(dspz_pagas, comp_data, item='F')
 
 # ==================================================
-# Cria o filtro na planilha final para servir de guia na atualização dos dados
+# Cria o filtro na planilha de comparação para servir de guia na atualização dos dados
 # ==================================================
 def create_filter_column(df):
     def process_row(row):
@@ -210,8 +225,6 @@ def def_dir_paths(source_dir:bool=False, dest_dir:bool=False):
 
         # Get the most recently modified file
         source_path = max(source_files, key=lambda f: f.stat().st_mtime)
-        print(f"Selected source file: {source_path.name}")
-        print(f"Modified: {datetime.fromtimestamp(source_path.stat().st_mtime)}\n")
 
         return source_path
 
@@ -225,12 +238,11 @@ def def_dir_paths(source_dir:bool=False, dest_dir:bool=False):
         if not dest_files:
             # If no file exists, use default name
             dest_path = directory / "Execução Orçamento 05.05.26.xlsx"
-            print(f"No existing destination file found. Will create: {dest_path.name}")
+            
         else:
             # Get the most recently modified destination file
             dest_path = max(dest_files, key=lambda f: f.stat().st_mtime)
-            print(f"Selected destination file: {dest_path.name}")
-            print(f"Modified: {datetime.fromtimestamp(dest_path.stat().st_mtime)}\n\n")
+            
 
         return dest_path    
 
@@ -363,11 +375,22 @@ def save_updates_without_breaking_formulas(dest_path: str, exact_columns: dict, 
 # Lógica do algoritmo para analisar diferenças entre planilhas.
 # =================================================
 def main():
+    # Setup logger
+    log_path = Path(r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\CGOFC\autom_xlsx_update.log")
+    logging.basicConfig(
+        filename=log_path,
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        encoding="utf-8",
+        filemode="w"
+    )
+
     # ==================================================
     # Lógica para processamento de dados e atualização de planilhas
     # ==================================================
     source_path = def_dir_paths(source_dir=True)
     dest_path = def_dir_paths(dest_dir=True)
+
 
     df_data_source = pd.read_excel(source_path, header=2)
     df_data_final = pd.read_excel(dest_path, sheet_name='Dados', header=2)
@@ -395,9 +418,8 @@ def main():
 
     df_final_clean['filter_col'] = create_filter_column(df_data_final)
 
-
     # Step 2: Get unique filter values as a set
-    filter_final_df_Set = set(df_final_clean['filter_col'])
+    filter_final_df_Set = sorted(list(set(df_final_clean['filter_col'])))
     
     source_columns = [
         'DOTACAO ATUALIZADA',
@@ -409,16 +431,12 @@ def main():
         'DESPESAS PAGAS'
         ]
 
-    for filter_value in set(df_data_source_clean['filter_col']):
+    for filter_value in filter_final_df_Set:
         if len(filter_value) != 6 or 'total' in filter_value.lower() or filter_value in ['', 'nan', 'none', None] or filter_value not in filter_final_df_Set:
             continue
-                
+
         chunk_source  = df_data_source_clean[df_data_source_clean['filter_col'] == filter_value].copy()
         chunk_final = df_final_clean[df_final_clean['filter_col'] == filter_value].copy()
-
-        print("\n" + "=" * 80)
-        print(f"   Processing filter value: {filter_value} with {len(chunk_source )} rows   ".center(80))
-        print("=" * 80)
 
         field_names = [f.name for f in fields(ComparisonData)]
         values = chunk_final.iloc[:, 5:12]   # Assuming items B-F are in columns 5-11 (0-indexed)
@@ -428,7 +446,7 @@ def main():
         condensed_row = {}
         for col in chunk_source .columns[9:20]:  # Columns 9 to 19 (0-indexed) - adjust if needed
             # Get non-NaN values from the column
-            col_values = chunk_source [col].fillna(0.0)
+            col_values = chunk_source [col].fillna(0.0).infer_objects(copy=False)
             
             if len(col_values) == 0:
                 # All NaN, keep as NaN
@@ -464,6 +482,10 @@ def main():
                 # Can't sum, take first non-NaN value
                 condensed_row[col] = col_values.iloc[0]
                 #print(f"  Column '{col}': took first value -> {condensed_row[col]}")
+        
+        # ==================================================
+        # Create BudgetData from chunk_source with correct values
+        # ==================================================
         if len(chunk_source) == 1:
             # Get values from the source columns
             values = [chunk_source[col].iloc[0] for col in source_columns]
@@ -473,19 +495,24 @@ def main():
                 ['dotacao_atual', 'dstq_concedido', 'credito_disp', 
                 'cred_indisp', 'dspz_p_empenhada', 'dsza_empenhada', 'dspz_pagas'],
                 values
-            )))
+                        )
+                    )
+                )
 
-        # Now create BudgetData dataclass directly from condensed_row
-        budget_data = BudgetData(
-            dotacao_atual=condensed_row.get('DOTACAO ATUALIZADA'),
-            dstq_concedido=condensed_row.get('DESTAQUE CONCEDIDO'),
-            credito_disp=condensed_row.get('CREDITO DISPONIVEL'),
-            cred_indisp=condensed_row.get('CREDITO INDISPONIVEL'),
-            dspz_p_empenhada=condensed_row.get('DESPESAS PRE-EMPENHADAS A EMPENHAR'),
-            dsza_empenhada=condensed_row.get('DESPESAS EMPENHADAS'),
-            dspz_pagas=condensed_row.get('DESPESAS PAGAS')
-        )
+        else:
+            # Now create BudgetData dataclass directly from condensed_row
+            budget_data = BudgetData(
+                dotacao_atual=condensed_row.get('DOTACAO ATUALIZADA'),
+                dstq_concedido=condensed_row.get('DESTAQUE CONCEDIDO'),
+                credito_disp=condensed_row.get('CREDITO DISPONIVEL'),
+                cred_indisp=condensed_row.get('CREDITO INDISPONIVEL'),
+                dspz_p_empenhada=condensed_row.get('DESPESAS PRE-EMPENHADAS A EMPENHAR'),
+                dsza_empenhada=condensed_row.get('DESPESAS EMPENHADAS'),
+                dspz_pagas=condensed_row.get('DESPESAS PAGAS')
+            )
    
+        logging.info(f"   BudgetData for {filter_value}: {budget_data}\n")
+
         # ==================================================
         # Now use both dataclasses with BudgetCalculator
         # ==================================================
@@ -536,33 +563,31 @@ def main():
             'E': 'Empenhado/Descentralizado \n(E)',
             'F': 'Pago              \n (F)'
         }
+        logging.info(f"Updated columns for {filter_value}: {exact_columns} \n Result A: {result_a} \n Result B: {result_b} \n Result C: {result_c} \n Result D: {result_d} \n Result E: {result_e} \n Result F: {result_f}\n")
+        print(f'Calculations and comparrisom for {filter_value}')
 
+        
         # Now update using the exact column names
         if result_a != comp_data.dotacao_atual:
             df_final_clean.loc[df_final_clean['filter_col'] == filter_value, exact_columns['A']] = result_a
-            print(f"Updated {clean_excel_columns(exact_columns['A'])} for {filter_value}: {result_a}")
+           
 
         if result_b != comp_data.dotacao_disponivel:
             df_final_clean.loc[df_final_clean['filter_col'] == filter_value, exact_columns['B']] = result_b
-            print(f"Updated {clean_excel_columns(exact_columns['B'])} for {filter_value}: {result_b}")
-
+            
         if result_c != comp_data.contingenciado:
             df_final_clean.loc[df_final_clean['filter_col'] == filter_value, exact_columns['C']] = result_c
-            print(f"Updated {clean_excel_columns(exact_columns['C'])} for {filter_value}: {result_c}")
 
         if result_d != comp_data.pre_empenhado:
             df_final_clean.loc[df_final_clean['filter_col'] == filter_value, exact_columns['D']] = result_d
-            print(f"Updated {clean_excel_columns(exact_columns['D'])} for {filter_value}: {result_d}")
 
         if result_e != comp_data.empenhado:
             df_final_clean.loc[df_final_clean['filter_col'] == filter_value, exact_columns['E']] = result_e
-            print(f"Updated {clean_excel_columns(exact_columns['E'])} for {filter_value}: {result_e}")
+            
 
         if result_f != comp_data.pago:
             df_final_clean.loc[df_final_clean['filter_col'] == filter_value, exact_columns['F']] = result_f
-            print(f"Updated {clean_excel_columns(exact_columns['F'])} for {filter_value}: {result_f}")
                  
-        print("=" * 80 + "\n")
     
     file_path = save_updates_without_breaking_formulas(dest_path=dest_path, exact_columns=exact_columns, df_final_clean=df_final_clean)
 
