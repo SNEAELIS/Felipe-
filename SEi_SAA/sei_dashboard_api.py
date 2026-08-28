@@ -49,7 +49,7 @@ os.system('cls' if os.name == 'nt' else 'clear')
 CREDENTIALS_FILE = Path(__file__).parent / "sei_credentials.json"
 
 ARQUIVO_FONTE = r"C:\Users\felipe.rsouza\Automação SNEAELIS\Dashboard sei DB\DB_sei_se - Copia.xlsx"
-#ARQUIVO_DESTINO = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\Controle_SEI\DB_sei_se.xlsx"
+ARQUIVO_DESTINO = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\Controle_SEI\DB_sei_se.xlsx"
 ARQUIVO_DESTINO_2 = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Mateus - SEI\DB_sei_se.xlsx"
 
 INTERVALO_LOOP = 300  # 5 minutos entre execuções

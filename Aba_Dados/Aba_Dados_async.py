@@ -109,7 +109,7 @@ class AsyncPWRobo:
                         continue
 
             # Enable resource blocking
-            #await self.block_rss()
+            await self.block_rss()
 
             # Start save worker
             self.save_task = asyncio.create_task(self._save_worker())

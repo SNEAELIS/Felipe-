@@ -8,7 +8,6 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, Error as
 from playwright.sync_api import sync_playwright
 import base64
 from PyPDF2 import PdfReader, PdfWriter
-import pytesseract
 from selenium.common import WebDriverException, TimeoutException, NoSuchElementException
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
@@ -34,22 +33,13 @@ from openpyxl.styles import numbers
 from pathlib import Path
 from kkk import find_lost_props, props_tgov_filtered
 
-r'''
-"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="%USERPROFILE%\chrome_profile" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
-"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9224 --user-data-dir="%USERPROFILE%\chrome_profile_2" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
-"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9226 --user-data-dir="%USERPROFILE%\chrome_profile_3" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
-"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9228 --user-data-dir="%USERPROFILE%\chrome_profile_4" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://idp.transferegov.sistema.gov.br/idp/"
-"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9230 --user-data-dir="%USERPROFILE%\chrome_profile_5" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://sei.mds.gov.br/sip/login.php?sigla_orgao_sistema=MC&sigla_sistema=SEI"
-"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9232 --user-data-dir="%USERPROFILE%\chrome_profile_6" --disable-features=TabSearch --disable-component-extensions-with-background-pages --no-first-run --force-dark-mode --enable-features=WebContentsForceDark "https://sei.mds.gov.br/sip/login.php?sigla_orgao_sistema=MC&sigla_sistema=SEI"
 
-'''
 # ███████████████████████████████████████████████████████████████████████
 #                            COMMENT TEMPLATE
 # ███████████████████████████████████████████████████████████████████████
 
 
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Users\felipe.rsouza\AppData\Local\Programs\Tesseract-OCR\tesseract.exe"
 
 os.system('cls' if os.name == 'nt' else 'clear')
 

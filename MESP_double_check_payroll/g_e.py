@@ -904,14 +904,17 @@ def process_all_workers(pdf_path, output_excel_path, page_numbers=None):
 if __name__ == "__main__":
     os.system('cls' if os.name == 'nt' else 'clear')
     
-    payroll_pdf_path = r"C:\Users\felipe.rsouza\Downloads\04._Contracheques_06.2026.pdf"
-    timesheet_pdf_path = r"C:\Users\felipe.rsouza\Downloads\SEI_71000.054138_2026_14.pdf"
-    excel_path = r"C:\Users\felipe.rsouza\Downloads\Medição.xlsx"
+    payroll_pdf_path = None#r"C:\Users\felipe.rsouza\Downloads\04._Contracheques_06.2026.pdf"
+    timesheet_pdf_path = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\account_MESP\G&E\10._Folhas_de_ponto_07.2026.pdf"
+    excel_path = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\account_MESP\G&E\Medição_G&E.xlsx"
     
     dataframes_to_save = {}
     
     # Extract payroll data
-    payroll_df = extract_pages_to_dataframe(payroll_pdf_path, page_numbers=None, table_num=1)
+    if payroll_pdf_path:
+        payroll_df = extract_pages_to_dataframe(payroll_pdf_path, page_numbers=None, table_num=1)
+    else:
+        payroll_df = pd.DataFrame()
     if not payroll_df.empty:
         dataframes_to_save['Payroll'] = payroll_df
         print(f"✅ Payroll data: {len(payroll_df)} rows extracted")

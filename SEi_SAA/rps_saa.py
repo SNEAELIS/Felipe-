@@ -15,7 +15,7 @@ os.system('cls' if os.name == 'nt' else 'clear')
 
 # ─── CONSTANTES ───────────────────────────────────────────────────────────────
 
-BLOCO_ASSINATURA_RP = '435153'#'432067'  # ANDREI RODRIGUES - RP e GRU
+BLOCO_ASSINATURA_RP = '430042'#'432067'  # ANDREI RODRIGUES - RP e GRU
 BLOCO_INTERNO_RP = '434283'     # RP e GRU pelo Robôzinho
 
 
@@ -286,6 +286,151 @@ def debug_page_info(page, label: str = ''):
         print(f"\n🔍 Indicadores de estrutura: ❌ {type(e).__name__}: {str(e)[:100]}")
 
     print("="*70)
+
+
+def debug_locator(locator, name="Element"):
+    """Comprehensive debugging for a locator - prints all information without returning"""
+    print(f"\n{'='*50}")
+    print(f"🔍 DEBUGGING: {name}")
+    print(f"{'='*50}")
+    
+    # Test 1: Count
+    try:
+        count = locator.count()
+        print(f"📊 Count: {count}")
+        
+        if count == 0:
+            print("❌ No elements found!")
+            print(f"{'='*50}\n")
+            # Just print and continue - no return
+    except Exception as e:
+        print(f"❌ Error getting count: {e}")
+    
+    # Try to get first element - properly handle the locator
+    try:
+        # Check if locator has elements before trying to get first
+        if locator.count() > 0:
+            first = locator.first
+            print(f"📌 First element found:")
+        else:
+            print("❌ No elements to debug")
+            print(f"{'='*50}\n")
+            return  # Can't continue without element
+    except Exception as e:
+        print(f"❌ Error getting first element: {e}")
+        print(f"{'='*50}\n")
+        return  # Can't continue without element
+    
+    # Now proceed with tests using 'first'
+    # Test 2: Tag name
+    try:
+        tag = first.evaluate('el => el.tagName')
+        print(f"   Tag: {tag}")
+    except Exception as e:
+        print(f"   ⚠️ Could not get tag name: {e}")
+    
+    # Test 3: ID attribute
+    try:
+        element_id = first.get_attribute('id')
+        print(f"   ID: {element_id}")
+    except Exception as e:
+        print(f"   ⚠️ Could not get ID: {e}")
+    
+    # Test 4: Class attribute
+    try:
+        class_name = first.get_attribute('class')
+        print(f"   Class: {class_name}")
+    except Exception as e:
+        print(f"   ⚠️ Could not get class: {e}")
+    
+    # Test 5: Style attribute
+    try:
+        style = first.get_attribute('style')
+        print(f"   Style: {style}")
+    except Exception as e:
+        print(f"   ⚠️ Could not get style: {e}")
+    
+    # Test 6: Text content
+    try:
+        text = first.inner_text()
+        print(f"   Text: '{text[:100]}'")
+    except Exception as e:
+        print(f"   ⚠️ Could not get text: {e}")
+    
+    # Test 7: Visibility
+    try:
+        visible = first.is_visible()
+        print(f"   Visible: {visible}")
+    except Exception as e:
+        print(f"   ⚠️ Could not check visibility: {e}")
+    
+    # Test 8: Enabled state
+    try:
+        enabled = first.is_enabled()
+        print(f"   Enabled: {enabled}")
+    except Exception as e:
+        print(f"   ⚠️ Could not check enabled state: {e}")
+    
+    # Test 9: Bounding box
+    try:
+        box = first.bounding_box()
+        if box:
+            print(f"   Position: ({box['x']:.0f}, {box['y']:.0f})")
+            print(f"   Size: {box['width']:.0f}x{box['height']:.0f}")
+        else:
+            print("   No bounding box (hidden or not rendered)")
+    except Exception as e:
+        print(f"   ⚠️ Could not get bounding box: {e}")
+    
+    # Test 10: HTML
+    try:
+        html = first.evaluate('el => el.outerHTML')
+        print(f"   HTML: {html[:150]}...")
+    except Exception as e:
+        print(f"   ⚠️ Could not get HTML: {e}")
+    
+    # Test 11: Ancestors chain
+    try:
+        ancestors_info = first.evaluate("""
+            (el) => {
+                const ancestors = [];
+                let current = el;
+                while (current && current !== document.body) {
+                    const style = window.getComputedStyle(current);
+                    ancestors.push({
+                        tag: current.tagName,
+                        id: current.id,
+                        className: current.className,
+                        display: style.display,
+                        visibility: style.visibility,
+                        overflow: style.overflow,
+                        height: style.height,
+                        width: style.width
+                    });
+                    current = current.parentElement;
+                }
+                return ancestors;
+            }
+        """)
+        
+        print(f"\n📌 Ancestors chain ({len(ancestors_info)} levels):")
+        for i, ancestor in enumerate(ancestors_info):
+            print(f"  {i}. {ancestor['tag']} id='{ancestor['id']}' class='{ancestor['className']}'")
+            print(f"     display: {ancestor['display']}, visibility: {ancestor['visibility']}")
+            print(f"     overflow: {ancestor['overflow']}, size: {ancestor['width']}x{ancestor['height']}")
+            
+            # Highlight if any ancestor is hidden
+            if ancestor['display'] == 'none':
+                print(f"     ⚠️  ➜ This ancestor has display: none!")
+            if ancestor['visibility'] == 'hidden':
+                print(f"     ⚠️  ➜ This ancestor has visibility: hidden!")
+            if 'hidden' in ancestor['overflow']:
+                print(f"     ⚠️  ➜ This ancestor has overflow: hidden!")
+                
+    except Exception as e:
+        print(f"   ⚠️ Could not get ancestors chain: {e}")
+    
+    print(f"{'='*50}\n")
 
 
 def detect_and_extract_editor_content(page: Page) -> Dict[str, any]:
@@ -960,15 +1105,15 @@ def criar_despacho(page, context, numero_processo: str) -> bool:
 # ─── FUNÇÃO 4: Encaminhar para bloco de assinatura ───────────────────────────
 
 def encaminhar_bloco_assinatura(page) -> bool:
-    """
-    Encaminhar processo para bloco de assinatura (432067 - ANDREI RODRIGUES).
+    f"""
+    Encaminhar processo para bloco de assinatura ({BLOCO_ASSINATURA_RP} - ANDREI RODRIGUES).
     
     Flow:
     1. Click on "Incluir em Bloco de Assinatura" icon
     2. Select dropdown option 432067
     3. Click "Incluir"
     """
-    print("📋 Encaminhando para bloco de assinatura (432067)...")
+    print(f"📋 Encaminhando para bloco de assinatura ({BLOCO_ASSINATURA_RP})...")
     
     try:
         # Step 1: Find and click the "Incluir em Bloco de Assinatura" link
@@ -1057,122 +1202,73 @@ def encaminhar_bloco_interno(page, context) -> bool:
     try:
         # Step 1: In ifrArvore, click the process number link
         frame_arvore = page.frame(name='ifrArvore')
+
         if frame_arvore:
             try:
-                # Find the span with processoNaoVisualizado or processoVisualizado
-                frame_arvore.evaluate('''
-                    () => {
-                        const anchors = document.querySelectorAll('#divArvore a');
-                        // Find the second anchor that contains a process number (has span with number)
-                        let count = 0;
-                        for (let a of anchors) {
-                            const span = a.querySelector('span');
-                            if (span && span.textContent.includes('.')) {
-                                count++;
-                                if (count === 2) {
-                                    a.click();
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                ''')
+                # 1. Define the locator for ALL anchors inside the tree div
+                anchors = frame_arvore.locator("#header")
+
+                for anchor in anchors.all():
+                    text = anchor.inner_text().strip()
+
+                    if re.search(r"\d{5}\.\d{6}/\d{4}-\d{2}", text):
+                        anchor.click()
+                        break
+
+                else:
+                    print("No process-like anchor found")                
+
                 time.sleep(0.3)
-            except:
-                pass
-        
-        # Step 2: Click "Incluir em Bloco de Assinatura" again
-        # This should open a modal/popup
-        bloco_link = page.query_selector('img[alt="Incluir em Bloco de Assinatura"], img[title*="Bloco de Assinatura"]')
-        if bloco_link:
-            bloco_link.click()
-            time.sleep(0.3)
+            except Exception as e:
+                print(f"⚠️ Erro ao clickar no link da árvore:\n{type(e).__name__}:\n {str(e)[:120]}")
+
+        # Step 2: Click "Incluir em Bloco" again
+        # This should open a popup
+        bloco_iframe = page.frame(name='ifrConteudoVisualizacao')
+        if bloco_iframe:
+            bloco_iframe.wait_for_selector('xpath=/html/body/div[1]/div/div/div[2]/div/a[13]', timeout=2000)
+            bloco_link = bloco_iframe.locator('a[onclick="incluirEmBloco();"]')
+            if bloco_link:
+                bloco_link.click()
         else:
-            page.evaluate('''
-                () => {
-                    const imgs = document.querySelectorAll('img');
-                    for (let img of imgs) {
-                        const alt = img.getAttribute('alt') || '';
-                        const title = img.getAttribute('title') || '';
-                        if (alt.includes('Bloco') || title.includes('Bloco')) {
-                            img.click();
-                            return;
-                        }
-                    }
-                }
-            ''')
-            time.sleep(0.3)
-        
-        # Step 3: The modal might be a new page or an iframe
-        # Check for modal iframe
-        modal_page = None
-        
-        # Check if a new page opened
-        for p in context.pages:
-            if 'bloco_selecionar_processo' in p.url:
-                modal_page = p
+            print("⚠️ ifrConteudoVisualizacao não encontrado para incluir em bloco interno")
+        time.sleep(0.3)
+
+        # Step 3: In select bloco interno 434283
+        # Wait for any iframe with modal-frame in id
+        page.wait_for_selector('iframe[id*="modal-frame"]')
+
+        # Get all iframes and find the one you need
+        iframe_elements = page.query_selector_all('iframe')
+        for iframe_element in iframe_elements:
+            iframe_id = iframe_element.get_attribute('id')
+            if iframe_id and 'modal-frame' in iframe_id:
+                iframe = page.frame_locator(f'iframe[id="{iframe_id}"]')
+                # Now use the iframe
                 break
         
-        if modal_page:
-            # Working in a new page
-            print("✅ Modal de bloco interno detectado (nova página)")
-            
-            # Select the radio for 434283
+        table = iframe.locator('#tblBlocos')
+
+        rows = table.locator('tr')
+        for row in range(rows.count()):
             try:
-                modal_page.evaluate(f'''
-                    () => {{
-                        const radios = document.querySelectorAll('input[type="radio"]');
-                        for (let radio of radios) {{
-                            if (radio.value === "{BLOCO_INTERNO_RP}") {{
-                                radio.click();
-                                break;
-                            }}
-                        }}
-                    }}
-                ''')
-                time.sleep(0.5)
-                
-                # Click the transport link
-                modal_page.evaluate(f'''
-                    () => {{
-                        const links = document.querySelectorAll('a[id*="lnkInfraT"]');
-                        for (let link of links) {{
-                            if (link.id === "lnkInfraT-{BLOCO_INTERNO_RP}") {{
-                                link.click();
-                                break;
-                            }}
-                        }}
-                    }}
-                ''')
-                print(f"✅ Bloco interno {BLOCO_INTERNO_RP} selecionado")
-                time.sleep(0.3)
-                
-            except Exception as e:
-                print(f"⚠️ Erro no modal de bloco interno: {str(e)[:80]}")
-        
-        else:
-            # Try to find modal in iframes
-            for frame in page.frames:
-                try:
-                    radio = frame.query_selector(f'input[value="{BLOCO_INTERNO_RP}"]')
-                    if radio:
-                        radio.click()
+                text = rows.nth(row).inner_text().strip()
+                if str(BLOCO_INTERNO_RP) in text:
+                    button = rows.nth(row).locator('img[title="Escolher este Bloco"]')
+                    if button.count() > 0:
+                        button.click(timeout=890)
                         time.sleep(0.5)
-                        
-                        # Click transport link
-                        transport_link = frame.query_selector(f'#lnkInfraT-{BLOCO_INTERNO_RP}')
-                        if transport_link:
-                            transport_link.click()
-                            print(f"✅ Bloco interno {BLOCO_INTERNO_RP} selecionado")
-                            time.sleep(0.3)
                         break
-                except:
-                    continue
+            except Exception as e:
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                print(f"⚠️ Erro ao encontrar o bloco interno: Erro:{exc_type.__name__}\n {str(e)[:100]}")
+                print(f"   Line: {exc_tb.tb_lineno}")
+                break
         
-        return True
-    
     except Exception as e:
-        print(f"⚠️ Erro ao encaminhar para bloco interno: {str(e)[:80]}")
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        print(f"⚠️ Erro ao encaminhar para bloco interno: Erro:{exc_type.__name__}\n {str(e)[:100]}")
+        print(f"   Line: {exc_tb.tb_lineno}")
         return False
 
 
@@ -1208,6 +1304,8 @@ def executar_scraping():
     page = None
     playwright = None
     browser = None
+    if browser:
+        print(browser)
     
     try:
         if isinstance(other_door, str) and other_door.isdigit():
@@ -1242,16 +1340,17 @@ def executar_scraping():
                                     print(f"✅ Despacho criado para processo {processo}")
                                     # Step 4: Encaminhar para bloco de assinatura
                                     encaminhar_bloco_assinatura(page=page)
-                                    
+
                                     # Step 5: Encaminhar para bloco interno
                                     encaminhar_bloco_interno(page=page, context=context)
                                     
                                     print(f"✅ Processo {processo} concluído com sucesso!")
+                                    break
                             except Exception as e:
                                     print(f"⚠️ Falha ao criar despacho para {processo}\nERRO: type={type(e).__name__}\n msg={str(e)[:100]}")
                     else:
                         print(f"⏭️ Processo {processo} não atende critérios, pulando")
-                    
+                
                     # Back to Controle de Processos
                     voltar_controle_processos(page)
                 else:

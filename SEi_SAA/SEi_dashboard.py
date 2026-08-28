@@ -13,6 +13,7 @@ from datetime import datetime
 
 import pandas as pd
 
+from pdfplumber import page
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError, Error as PlaywrightError
 
 
@@ -24,13 +25,13 @@ class WorkbookState:
 
     def __init__(self):
 
-        self.bloco = None
+        self.bloco: pd.DataFrame | None = None
 
-        self.processos = None
+        self.processos: pd.DataFrame | None = None
 
-        self.andamento = None
+        self.andamento: pd.DataFrame | None = None
 
-        self.controle = None
+        self.controle: pd.DataFrame | None = None
 
 
 # --- Garante que o navegador esteja na aba correta e conectado ao sei ---
@@ -120,7 +121,9 @@ def formato_padrao(num_sei: str):
 
 # --- Acessa o bloco de assinatura ---
 def acessa_bloco_ass(page):
-    """Access the signature block menu"""
+    """ Access the signature block menu
+        This function requires that the user is already logged into SEI, the browser is on main page and the sidebar is closed. 
+    """
     print('Acessando o bloco de assinaturas')
     try:
         xpaths = [
@@ -128,15 +131,37 @@ def acessa_bloco_ass(page):
             'xpath=/html/body/div[1]/div/div[1]/div[1]/ul/li[4]/a',
             'xpath=/html/body/div[1]/div/div[1]/div[1]/ul/li[4]/ul/li[1]/a'
         ]
-        
-        for xpath in xpaths:
-            try:
-                element = page.wait_for_selector(xpath, timeout=2000)
-                element.click()
-                time.sleep(0.3)
-            except:
-                continue
-                
+
+        # Check if the Base de Conhecimento menu item is visible
+        sidebar_element = page.query_selector('#divInfraSidebarMenu')
+        style = sidebar_element.get_attribute('style')
+
+        # Check if overflow is hidden (meaning the sidebar is collapsed/hidden)
+        # Element is visible - only use elements [1,2] (index 1 and 2 in your list)
+        if not 'overflow: hidden visible' in style and not 'overflow: hidden' in style: 
+          
+            # Only use elements at index 1 and 2
+            for xpath in xpaths[1:]:  # This will take elements [1,2]
+                try:
+                    if page.is_visible(xpaths[2]):
+                        page.wait_for_selector(xpaths[2], timeout=2000).click()
+                        break
+
+                    element = page.wait_for_selector(xpath, timeout=2000)
+                    element.click()
+                    time.sleep(0.3)
+                except:
+                    continue
+        else:
+            # Element is hidden - use all xpaths to first make it visible
+            for xpath in xpaths:
+                try:
+                    element = page.wait_for_selector(xpath, timeout=2000)
+                    element.click()
+                    time.sleep(0.3)
+                except:
+                    continue
+
     except Exception as e:
         exc_type, exc_value, exc_tb = sys.exc_info()
         print(f"Error occurred: {str(e)[:100]}")
@@ -145,7 +170,7 @@ def acessa_bloco_ass(page):
 
 
 # --- Extrai os processos do bloco de assinatura ---
-def extrair_dados_bloco(page, arquivo_excel: str):
+def extrair_dados_bloco(page):
     """Extract data from signature block"""
     try:       
         # Wait for table
@@ -191,7 +216,7 @@ def extrair_dados_bloco(page, arquivo_excel: str):
 
 
 # --- Extrai os processos das propostas ---
-def extrair_dados_propostas(page, arquivo_excel: str):
+def extrair_dados_propostas(page):
     """Extract data from proposals"""
     try:
         # Wait for block table
@@ -296,8 +321,10 @@ def extrair_dados_propostas(page, arquivo_excel: str):
                 continue
 
         if resultados:
-            print(f"Total de {len(resultados)} linhas encontradas nas PROPOSTAS")
-            return pd.DataFrame(resultados)
+            df_resultados = pd.DataFrame(resultados)
+            print(f" Número de blocos com propostas {df_resultados['Seq.'].replace('', pd.NA).notna().sum()}")
+            print(f" Número de blocos sem propostas: {df_resultados['Seq.'].replace('', pd.NA).isna().sum()}")
+            return df_resultados.replace('', pd.NA)
 
         else:
             print("Nenhuma linha encontrada para salvar")
@@ -720,7 +747,7 @@ def extract_history_from_nested_frame(page, numero_processo) -> list[dict]:
 
 
 # --- Extrai detalhes das propostas (andamentos) ---
-def get_proposal_details(page, arquivo_excel: str, sheet_name: str, processos=None ):
+def get_proposal_details(page, sheet_name: str, processos=None ):
     """Extract proposal tracking details and save to specified sheet_name"""
     
     columns = ['Processo', 'Data/Hora', 'Unidade', 'Usuário', 'Descrição']
@@ -1379,27 +1406,22 @@ def executar_scraping():
                 # Main loop
                 acessa_bloco_ass(page=page)
 
-                state.bloco = extrair_dados_bloco(page=page,
-                                     arquivo_excel=arquivo_fonte
-                                     )
+                state.bloco = extrair_dados_bloco(page=page)
                 
-                state.processos = extrair_dados_propostas(page=page,
-                                        arquivo_excel=arquivo_fonte
-                                        )
+                state.processos = extrair_dados_propostas(page=page)
  
                 state.andamento = get_proposal_details(page=page,
-                                     arquivo_excel=arquivo_fonte,
                                      sheet_name='Andamento',
                                      processos=state.processos
                                      )
                 
                 state.controle = get_proposal_details(page=page,
-                                     arquivo_excel=arquivo_fonte,
                                      sheet_name='Controle de Processo'
                                      )
 
                 salvar_excel(arquivo=arquivo_fonte, dados=state)
 
+                # Cria um histórico diário dentro de uma 
                 if should_save:
                     salvar_excel_com_data(arquivo=arquivo_fonte, dados=state)
 

@@ -428,7 +428,6 @@ def executar_scraping():
     arquivo_fonte = (r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\Teste001\propostas_SEi.xlsx")
     
     # --- Planilha POLI --- 
-    #arquivo_fonte = r"C:\Users\felipe.rsouza\OneDrive - Ministério do Desenvolvimento e Assistência Social\SNEAELIS - Python\dashboard-nodejs\DATA\Acompanhamento\Controle SNEAELIS - 2026.xlsx"
 
     quarter = int(input('Digite qual quarto da base está send1o executado (between 1 to 4) :: '))
 
