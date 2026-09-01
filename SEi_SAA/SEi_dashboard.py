@@ -763,7 +763,6 @@ def get_proposal_details(page, sheet_name: str, processos=None ):
         page.click('#lnkControleProcessos')
         source, new_processes = extract_received_processos(page=page)
         numeros_processo = source['Processo'].tolist()
-        print(source)
         print(f"🔎 Found {len(numeros_processo)} process numbers in the source sheet")
         
    
@@ -910,12 +909,12 @@ def extract_received_processos(page) -> pd.DataFrame:
         }
         """)
 
-        skipped_as_dicts = []
-        print(f"🔎 Found {len(result['skipped'])} assigned processes (skipped)")
-        print(f"🔎 Found {len(result['processos'])} unassigned processes (included)")
+        new_processes = []
+        print(f"🔎 Found {len(result['skipped'])} assigned processes (included)")
+        print(f"🔎 Found {len(result['processos'])} unassigned processes (skipped)")
 
         for process in result['processos']:
-            skipped_as_dicts.append({
+            new_processes.append({
                 'Processo': process,
                 'Data/Hora': 'novo',
                 'Unidade': 'novo',
@@ -924,9 +923,9 @@ def extract_received_processos(page) -> pd.DataFrame:
                 # Add any other fields that your history extraction returns
             })
         
-        df = pd.DataFrame({'Processo': result['processos']})
+        df = pd.DataFrame({'Processo': result['skipped']})
 
-        return df, skipped_as_dicts
+        return df, new_processes
 
     except Exception as e:
         exc_type, exc_value, exc_tb = sys.exc_info()
@@ -1418,7 +1417,7 @@ def executar_scraping():
                 state.controle = get_proposal_details(page=page,
                                      sheet_name='Controle de Processo'
                                      )
-
+ 
                 salvar_excel(arquivo=arquivo_fonte, dados=state)
 
                 # Cria um histórico diário dentro de uma 

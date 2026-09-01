@@ -13,6 +13,7 @@ Djembows*
 *.pyc
 *.zip
 *.txt
+!requirements.txt
 *.json
 *.html
 *.xlsx
@@ -33,6 +34,8 @@ log.txt
 html_file_to_pdf.html
 output_resultado_processos.xlsx
 Felipe-.code-workspace
+Aba_Dados/check_data_acomp_fisc_esclarecimentos_1-2.py
+Aba_Dados/check_data_acomp_fisc_esclarecimentos_2-2.py
 
 # Local-only folders
 MESP_double_check_payroll/
