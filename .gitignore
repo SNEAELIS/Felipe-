@@ -20,3 +20,30 @@ Djembows*
 .agent
 .idea
 .code-workspace
+
+# Scratch / one-off scripts (kept locally, not published)
+kkk.py
+shrumbs.py
+shwimbows.py
+extratos_sei.py
+monitor.py
+Update_Sources.py
+debug.log
+log.txt
+html_file_to_pdf.html
+output_resultado_processos.xlsx
+Felipe-.code-workspace
+
+# Local-only folders
+MESP_double_check_payroll/
+newsletter/
+CGOFC/dist/
+
+# Misc binary / doc / data leftovers
+*.rmd
+*.wsdl
+*.exe
+*.jpeg
+*.jpg
+*.pdf
+*.log
